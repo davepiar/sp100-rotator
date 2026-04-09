@@ -1,0 +1,35 @@
+# Credentials (never commit)
+.alpaca/
+*.env
+.env.*
+credentials
+
+# Claude local settings (machine-specific permissions)
+.claude/settings.local.json
+
+# Runtime state & data
+state/
+data/snapshots/
+data/reports/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+*.egg-info/
+dist/
+build/
+venv/
+.venv/
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
