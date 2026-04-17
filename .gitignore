@@ -12,6 +12,13 @@ state/
 data/snapshots/
 data/reports/
 
+# Claude memory files (personal notes on user/project)
+.claude/memory/
+
+# Logs and caches
+*.log
+.cache/
+
 # Python
 __pycache__/
 *.pyc

@@ -1,0 +1,103 @@
+ticker,sector,mcap_tier
+AAPL,Information Technology,mega
+MSFT,Information Technology,mega
+NVDA,Information Technology,mega
+GOOGL,Communication Services,mega
+GOOG,Communication Services,mega
+AMZN,Consumer Discretionary,mega
+META,Communication Services,mega
+BRK.B,Financials,mega
+TSLA,Consumer Discretionary,mega
+AVGO,Information Technology,mega
+LLY,Health Care,mega
+JPM,Financials,mega
+WMT,Consumer Staples,mega
+V,Financials,mega
+XOM,Energy,mega
+UNH,Health Care,mega
+ORCL,Information Technology,mega
+MA,Financials,mega
+HD,Consumer Discretionary,mega
+PG,Consumer Staples,mega
+JNJ,Health Care,mega
+COST,Consumer Staples,mega
+ABBV,Health Care,mega
+NFLX,Communication Services,mega
+BAC,Financials,mega
+CRM,Information Technology,mega
+CVX,Energy,mega
+KO,Consumer Staples,mega
+MRK,Health Care,mega
+AMD,Information Technology,mega
+ADBE,Information Technology,mega
+PEP,Consumer Staples,mega
+TMO,Health Care,large
+LIN,Materials,large
+CSCO,Information Technology,large
+ACN,Information Technology,large
+MCD,Consumer Discretionary,large
+ABT,Health Care,large
+WFC,Financials,large
+DHR,Health Care,large
+IBM,Information Technology,large
+CAT,Industrials,large
+GE,Industrials,large
+AXP,Financials,large
+TMUS,Communication Services,large
+DIS,Communication Services,large
+INTU,Information Technology,large
+NOW,Information Technology,large
+QCOM,Information Technology,large
+TXN,Information Technology,large
+MS,Financials,large
+GS,Financials,large
+ISRG,Health Care,large
+VZ,Communication Services,large
+CMCSA,Communication Services,large
+AMGN,Health Care,large
+PFE,Health Care,large
+RTX,Industrials,large
+SPGI,Financials,large
+UBER,Industrials,large
+BKNG,Consumer Discretionary,large
+BLK,Financials,large
+T,Communication Services,large
+HON,Industrials,large
+COP,Energy,large
+UNP,Industrials,large
+NEE,Utilities,large
+SCHW,Financials,large
+LOW,Consumer Discretionary,large
+C,Financials,large
+BMY,Health Care,large
+PLTR,Information Technology,large
+DE,Industrials,large
+SBUX,Consumer Discretionary,large
+BA,Industrials,large
+LMT,Industrials,large
+GILD,Health Care,large
+ELV,Health Care,large
+MDLZ,Consumer Staples,large
+PM,Consumer Staples,large
+MDT,Health Care,large
+ADP,Information Technology,large
+NKE,Consumer Discretionary,large
+CVS,Health Care,large
+MO,Consumer Staples,large
+DUK,Utilities,large
+SO,Utilities,large
+CL,Consumer Staples,large
+TGT,Consumer Discretionary,large
+USB,Financials,large
+F,Consumer Discretionary,large
+GM,Consumer Discretionary,large
+PYPL,Financials,large
+FDX,Industrials,large
+EMR,Industrials,large
+MMM,Industrials,large
+COF,Financials,large
+INTC,Information Technology,large
+SLB,Energy,large
+AMT,Real Estate,large
+DOW,Materials,large
+KHC,Consumer Staples,large

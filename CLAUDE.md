@@ -149,6 +149,8 @@ git add . && git commit -m "Import P0/P1 skills from tradermonty/claude-trading-
 
 After import, review each `SKILL.md` for hard-coded data sources and swap to the stack we standardize on (Alpaca data API for prices, FMP free tier for fundamentals, Yahoo as fallback).
 
+**FMP free tier caveats (as of Apr 2026):** The `/api/v3/*` endpoints were deprecated Aug 31, 2025 — use `/stable/*` instead. Most price/quote/historical/fundamentals endpoints still work on the free 250/day tier, but `institutional-ownership/*`, some screeners, and certain analyst-data endpoints now return HTTP 402 (paid-tier only). If a skill throws 402, either migrate to a free alternative (Yahoo, Alpaca bars, SEC EDGAR) or scope it out. Cache aggressively — 250 req/day is tight for a 100-ticker universe.
+
 ## Logging & audit
 
 - Every order request + response is appended to `state/trade_log.jsonl`.
@@ -169,6 +171,7 @@ After import, review each `SKILL.md` for hard-coded data sources and swap to the
 - Live (non-paper) trading
 - Discretionary overrides mid-session
 - Tax-lot optimization
+- Institutional flow / 13F tracking — the `institutional-flow-tracker` skill was dropped because FMP moved `institutional-ownership/*` endpoints behind a paid tier after the Aug 31, 2025 v3 deprecation. The 45-day 13F reporting lag also doesn't fit a daily rotator. Revisit only if we upgrade FMP or wire up SEC EDGAR directly.
 
 ---
 
