@@ -7,6 +7,9 @@ credentials
 # Claude local settings (machine-specific permissions)
 .claude/settings.local.json
 
+# Claude worktrees (git plumbing, not source)
+.claude/worktrees/
+
 # Runtime state & data
 state/
 data/snapshots/
