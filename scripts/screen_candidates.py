@@ -26,8 +26,9 @@ import requests
 
 PROJECT = Path(__file__).resolve().parents[1]
 UNIVERSE_PATH = PROJECT / "data" / "universe" / "sp100.csv"
-SECTOR_JSON_DIR = PROJECT / "data" / "snapshots" / "2026-04-20"
-OUT_DIR = PROJECT / "data" / "snapshots" / "2026-04-20"
+_TODAY = os.environ.get("SESSION_DATE", date.today().isoformat())
+SECTOR_JSON_DIR = PROJECT / "data" / "snapshots" / _TODAY
+OUT_DIR = PROJECT / "data" / "snapshots" / _TODAY
 
 # Map sector-analyst sector names -> sp100.csv sector names
 SECTOR_ALIAS = {
