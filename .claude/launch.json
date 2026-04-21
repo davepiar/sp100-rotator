@@ -1,0 +1,17 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "dashboard-server",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["--prefix", "dashboard/server", "start"],
+      "port": 8787
+    },
+    {
+      "name": "dashboard-web",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["--prefix", "dashboard/web", "run", "dev"],
+      "port": 5173
+    }
+  ]
+}
