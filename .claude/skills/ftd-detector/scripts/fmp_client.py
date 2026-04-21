@@ -203,15 +203,79 @@ class FMPClient:
         return data
 
     def get_historical_prices(self, symbol: str, days: int = 365) -> Optional[dict]:
-        """Fetch historical daily OHLCV data"""
+        """Fetch historical OHLCV. Try stable-eod first; on empty/failure, fall back to Alpaca bars."""
         cache_key = f"prices_{symbol}_{days}"
         if cache_key in self.cache:
             return self.cache[cache_key]
 
-        data = self._request_with_fallback("historical", symbol, {"timeseries": days})
-        if data:
-            self.cache[cache_key] = data
-        return data
+        # Try FMP stable /historical-price-eod/full (list, newest-first)
+        url = "https://financialmodelingprep.com/stable/historical-price-eod/full"
+        data = self._rate_limited_get(url, {"symbol": symbol}, quiet=True)
+        if isinstance(data, list) and data:
+            wrapped = {"symbol": symbol, "historical": data[:days]}
+            self.cache[cache_key] = wrapped
+            return wrapped
+
+        # Alpaca fallback
+        ak = os.getenv("ALPACA_API_KEY")
+        sk = os.getenv("ALPACA_SECRET_KEY")
+        durl = os.getenv("ALPACA_DATA_URL", "https://data.alpaca.markets")
+        if not (ak and sk):
+            return None
+        # Map index symbols to ETF proxies
+        alpaca_symbol = {"^GSPC": "SPY", "^IXIC": "QQQ", "^DJI": "DIA", "^RUT": "IWM"}.get(symbol, symbol)
+        if alpaca_symbol.startswith("^"):
+            return None
+        from datetime import datetime, timedelta, timezone
+        end = datetime.now(timezone.utc) - timedelta(minutes=20)
+        start = end - timedelta(days=int(days * 1.6) + 10)
+        bars = []
+        page_token = None
+        while True:
+            p = {
+                "symbols": alpaca_symbol,
+                "timeframe": "1Day",
+                "start": start.strftime("%Y-%m-%dT%H:%M:%SZ"),
+                "end": end.strftime("%Y-%m-%dT%H:%M:%SZ"),
+                "limit": 10000,
+                "adjustment": "raw",
+                "feed": "iex",
+            }
+            if page_token:
+                p["page_token"] = page_token
+            try:
+                r = requests.get(
+                    f"{durl}/v2/stocks/bars",
+                    headers={"APCA-API-KEY-ID": ak, "APCA-API-SECRET-KEY": sk},
+                    params=p,
+                    timeout=30,
+                )
+                if r.status_code != 200:
+                    return None
+                j = r.json()
+                b = j.get("bars", {}).get(alpaca_symbol, [])
+                bars.extend(b)
+                page_token = j.get("next_page_token")
+                if not page_token:
+                    break
+            except Exception:
+                return None
+        if not bars:
+            return None
+        historical = [
+            {
+                "date": bb["t"][:10],
+                "open": bb["o"],
+                "high": bb["h"],
+                "low": bb["l"],
+                "close": bb["c"],
+                "volume": bb["v"],
+            }
+            for bb in reversed(bars)
+        ][:days]
+        wrapped = {"symbol": symbol, "historical": historical}
+        self.cache[cache_key] = wrapped
+        return wrapped
 
     def get_batch_quotes(self, symbols: list[str]) -> dict[str, dict]:
         """Fetch quotes for a list of symbols, batching up to 5 per request"""

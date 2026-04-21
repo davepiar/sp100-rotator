@@ -88,17 +88,81 @@ class FMPClient:
             return None
 
     def get_historical_prices(self, symbol: str, days: int = 600) -> Optional[dict]:
-        """Fetch historical daily OHLCV data"""
+        """Fetch historical daily OHLCV data. FMP stable endpoint first; Alpaca fallback if FMP 402s."""
         cache_key = f"prices_{symbol}_{days}"
         if cache_key in self.cache:
             return self.cache[cache_key]
 
-        url = f"{self.BASE_URL}/historical-price-full/{symbol}"
-        params = {"timeseries": days}
+        url = f"{self.STABLE_URL}/historical-price-eod/full"
+        params = {"symbol": symbol}
         data = self._rate_limited_get(url, params)
-        if data:
+        if isinstance(data, list) and data:
+            wrapped = {"symbol": symbol, "historical": data[:days]}
+            self.cache[cache_key] = wrapped
+            return wrapped
+        if isinstance(data, dict) and "historical" in data:
             self.cache[cache_key] = data
-        return data
+            return data
+
+        # Fallback: Alpaca bars
+        ak = os.getenv("ALPACA_API_KEY")
+        sk = os.getenv("ALPACA_SECRET_KEY")
+        durl = os.getenv("ALPACA_DATA_URL", "https://data.alpaca.markets")
+        if not (ak and sk):
+            return None
+        from datetime import datetime, timedelta, timezone
+        end = datetime.now(timezone.utc) - timedelta(minutes=20)
+        start = end - timedelta(days=int(days * 1.6) + 10)
+        bars = []
+        page_token = None
+        while True:
+            p = {
+                "symbols": symbol,
+                "timeframe": "1Day",
+                "start": start.strftime("%Y-%m-%dT%H:%M:%SZ"),
+                "end": end.strftime("%Y-%m-%dT%H:%M:%SZ"),
+                "limit": 10000,
+                "adjustment": "raw",
+                "feed": "iex",
+            }
+            if page_token:
+                p["page_token"] = page_token
+            try:
+                r = requests.get(
+                    f"{durl}/v2/stocks/bars",
+                    headers={"APCA-API-KEY-ID": ak, "APCA-API-SECRET-KEY": sk},
+                    params=p,
+                    timeout=30,
+                )
+                if r.status_code != 200:
+                    print(f"  Alpaca fallback for {symbol}: HTTP {r.status_code}", file=sys.stderr)
+                    return None
+                j = r.json()
+                b = j.get("bars", {}).get(symbol, [])
+                bars.extend(b)
+                page_token = j.get("next_page_token")
+                if not page_token:
+                    break
+            except Exception as e:
+                print(f"  Alpaca fallback for {symbol} exception: {e}", file=sys.stderr)
+                return None
+        if not bars:
+            return None
+        # Alpaca returns oldest-first. FMP returns newest-first. Match FMP.
+        historical = [
+            {
+                "date": b["t"][:10],
+                "open": b["o"],
+                "high": b["h"],
+                "low": b["l"],
+                "close": b["c"],
+                "volume": b["v"],
+            }
+            for b in reversed(bars)
+        ][:days]
+        wrapped = {"symbol": symbol, "historical": historical}
+        self.cache[cache_key] = wrapped
+        return wrapped
 
     def get_batch_historical(self, symbols: list[str], days: int = 600) -> dict[str, list[dict]]:
         """Fetch historical prices for multiple symbols"""
