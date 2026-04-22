@@ -55,6 +55,112 @@ function StatusBadge({ status }) {
   return <span className="status status-unknown">—</span>;
 }
 
+const MCAP_LABELS = {
+  mega: "Mega cap",
+  large: "Large cap",
+  mid: "Mid cap",
+  small: "Small cap",
+};
+
+function SymbolCell({ row }) {
+  const { symbol, name, sector, mcapTier, exchange } = row;
+  return (
+    <div className="sym-cell">
+      <span className="sym">{symbol}</span>
+      {row.side && row.side !== "long" && row.side !== "buy" && row.side !== "sell" && (
+        <span className="side">{row.side}</span>
+      )}
+      <div className="sym-popover" role="tooltip">
+        <div className="pop-header">
+          <span className="pop-sym">{symbol}</span>
+          {exchange && <span className="pop-exchange">{exchange}</span>}
+        </div>
+        <div className="pop-name">{name || "—"}</div>
+        <dl className="pop-meta">
+          <div>
+            <dt>Sector</dt>
+            <dd>{sector || "—"}</dd>
+          </div>
+          <div>
+            <dt>Size</dt>
+            <dd>{MCAP_LABELS[mcapTier] || mcapTier || "—"}</dd>
+          </div>
+        </dl>
+      </div>
+    </div>
+  );
+}
+
+function SideBadge({ side }) {
+  const kind = side === "buy" ? "buy" : side === "sell" ? "sell" : "other";
+  return (
+    <span className={`side-badge side-${kind}`}>{side?.toUpperCase() || "—"}</span>
+  );
+}
+
+function formatDateTime(iso) {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  return d.toLocaleString([], {
+    month: "short",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+function OrdersTable({ orders }) {
+  if (!orders) return null;
+  if (orders.length === 0) {
+    return <div className="empty">No pending orders.</div>;
+  }
+  return (
+    <div className="table-wrap">
+      <table className="positions">
+        <thead>
+          <tr>
+            <th>Side</th>
+            <th className="col-sym">Symbol</th>
+            <th className="num">Qty</th>
+            <th>Type</th>
+            <th className="num">Limit / Stop</th>
+            <th className="num" title="Qty × limit (or stop) price">
+              Est. cost
+            </th>
+            <th>TIF</th>
+            <th>Placed</th>
+          </tr>
+        </thead>
+        <tbody>
+          {orders.map((o) => {
+            const price = o.limitPrice ?? o.stopPrice;
+            return (
+              <tr key={o.id}>
+                <td>
+                  <SideBadge side={o.side} />
+                </td>
+                <td className="col-sym">
+                  <SymbolCell row={o} />
+                </td>
+                <td className="num">
+                  {o.remainingQty != null ? qtyFmt.format(o.remainingQty) : "—"}
+                </td>
+                <td className="type-cell">{o.type}</td>
+                <td className="num">{price == null ? "—" : usd.format(price)}</td>
+                <td className="num">
+                  {o.estCost == null ? "—" : usd.format(o.estCost)}
+                </td>
+                <td className="tif-cell">{o.timeInForce}</td>
+                <td className="muted">{formatDateTime(o.submittedAt)}</td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 function Card({ label, value, loading }) {
   return (
     <div className="card">
@@ -100,10 +206,7 @@ function PositionsTable({ positions }) {
           {positions.map((p) => (
             <tr key={p.symbol} className={p.status === "exit-next" ? "row-exit" : ""}>
               <td className="col-sym">
-                <span className="sym">{p.symbol}</span>
-                {p.side && p.side !== "long" && (
-                  <span className="side">{p.side}</span>
-                )}
+                <SymbolCell row={p} />
               </td>
               <td className="num">{qtyFmt.format(p.qty)}</td>
               <td className="num">{usd.format(p.avgEntryPrice)}</td>
@@ -208,6 +311,29 @@ export default function App() {
           <span className="status status-exit">Exit next</span> = dropped from
           plan, will be sold next session · <b>Drift</b> = actual − target
           weight (pp); near zero means on plan.
+        </div>
+      </section>
+
+      <section className="positions-section">
+        <div className="section-header">
+          <h2>Pending operations</h2>
+          <span className="count">
+            {data?.openOrders
+              ? `${data.openOrders.length} pending`
+              : "—"}
+            {data?.pendingBuyCommitment != null && data.pendingBuyCommitment > 0 && (
+              <>
+                {" · est. buy commitment "}
+                {usd.format(data.pendingBuyCommitment)}
+              </>
+            )}
+          </span>
+        </div>
+        <OrdersTable orders={data?.openOrders} />
+        <div className="legend">
+          Orders already accepted by the broker but not yet filled. Limit orders
+          rest in the book and execute when the market reaches the price (or
+          expire per TIF).
         </div>
       </section>
 

@@ -53,6 +53,57 @@ const TARGET_WEIGHTS_PATH = path.resolve(
   "state",
   "target_weights.json",
 );
+const UNIVERSE_PATH = path.resolve(
+  __dirname,
+  "..",
+  "..",
+  "data",
+  "universe",
+  "sp100.csv",
+);
+
+function loadUniverse() {
+  const map = new Map();
+  try {
+    const text = fs.readFileSync(UNIVERSE_PATH, "utf8");
+    const lines = text.split(/\r?\n/).filter(Boolean);
+    const [header, ...rows] = lines;
+    const cols = header.split(",").map((c) => c.trim());
+    const iTicker = cols.indexOf("ticker");
+    const iSector = cols.indexOf("sector");
+    const iMcap = cols.indexOf("mcap_tier");
+    for (const row of rows) {
+      const parts = row.split(",");
+      const ticker = parts[iTicker]?.trim();
+      if (!ticker) continue;
+      map.set(ticker, {
+        sector: iSector >= 0 ? parts[iSector]?.trim() || null : null,
+        mcapTier: iMcap >= 0 ? parts[iMcap]?.trim() || null : null,
+      });
+    }
+  } catch (err) {
+    console.warn(`[warn] cannot read universe csv: ${err.message}`);
+  }
+  return map;
+}
+
+const UNIVERSE = loadUniverse();
+const ASSET_CACHE = new Map(); // symbol -> { name, exchange }
+
+async function getAssetMeta(symbol) {
+  if (ASSET_CACHE.has(symbol)) return ASSET_CACHE.get(symbol);
+  try {
+    const a = await alpacaGet(`/v2/assets/${encodeURIComponent(symbol)}`);
+    const meta = { name: a.name || null, exchange: a.exchange || null };
+    ASSET_CACHE.set(symbol, meta);
+    return meta;
+  } catch (err) {
+    console.warn(`[warn] asset ${symbol}: ${err.message}`);
+    const meta = { name: null, exchange: null };
+    ASSET_CACHE.set(symbol, meta); // cache the miss too; avoid repeated failing calls
+    return meta;
+  }
+}
 
 function readTargetPlan() {
   try {
@@ -124,11 +175,60 @@ function annotateWithPlan(positions, equity, plan) {
   });
 }
 
+async function attachAssetMeta(rows) {
+  const metas = await Promise.all(rows.map((r) => getAssetMeta(r.symbol)));
+  return rows.map((r, i) => {
+    const u = UNIVERSE.get(r.symbol) || {};
+    return {
+      ...r,
+      name: metas[i].name,
+      exchange: metas[i].exchange,
+      sector: u.sector || null,
+      mcapTier: u.mcapTier || null,
+    };
+  });
+}
+
+function normalizeOrder(o) {
+  const limit = o.limit_price == null ? null : Number(o.limit_price);
+  const stop = o.stop_price == null ? null : Number(o.stop_price);
+  const qty = o.qty == null ? null : Number(o.qty);
+  const notional = o.notional == null ? null : Number(o.notional);
+  const filledQty = o.filled_qty == null ? 0 : Number(o.filled_qty);
+  const remainingQty = qty == null ? null : qty - filledQty;
+  const refPrice = limit ?? stop;
+  const estCost =
+    notional != null
+      ? notional
+      : remainingQty != null && refPrice != null
+        ? remainingQty * refPrice
+        : null;
+  return {
+    id: o.id,
+    symbol: o.symbol,
+    side: o.side,
+    type: o.type,
+    status: o.status,
+    timeInForce: o.time_in_force,
+    qty,
+    filledQty,
+    remainingQty,
+    limitPrice: limit,
+    stopPrice: stop,
+    notional,
+    estCost,
+    createdAt: o.created_at,
+    submittedAt: o.submitted_at,
+    expiresAt: o.expires_at,
+  };
+}
+
 app.get("/api/portfolio", async (_req, res) => {
   try {
-    const [account, positions] = await Promise.all([
+    const [account, positions, openOrders] = await Promise.all([
       alpacaGet("/v2/account"),
       alpacaGet("/v2/positions"),
+      alpacaGet("/v2/orders?status=open&limit=100"),
     ]);
     const cash = Number(account.cash);
     const equity = Number(account.equity);
@@ -139,12 +239,26 @@ app.get("/api/portfolio", async (_req, res) => {
     );
     const plan = readTargetPlan();
     const annotated = annotateWithPlan(normalized, equity, plan);
-    annotated.sort((a, b) => b.marketValue - a.marketValue);
+    const positionsWithMeta = await attachAssetMeta(annotated);
+    positionsWithMeta.sort((a, b) => b.marketValue - a.marketValue);
+
+    const normalizedOrders = openOrders.map(normalizeOrder);
+    const ordersWithMeta = await attachAssetMeta(normalizedOrders);
+    ordersWithMeta.sort((a, b) => {
+      const t = (b.estCost ?? 0) - (a.estCost ?? 0);
+      return t !== 0 ? t : a.symbol.localeCompare(b.symbol);
+    });
+    const pendingBuyCommitment = ordersWithMeta
+      .filter((o) => o.side === "buy")
+      .reduce((sum, o) => sum + (o.estCost ?? 0), 0);
+
     res.json({
       cash,
       positionsValue,
       equity,
-      positions: annotated,
+      positions: positionsWithMeta,
+      openOrders: ordersWithMeta,
+      pendingBuyCommitment,
       plan: {
         sessionDate: plan.sessionDate,
         asOf: plan.asOf,

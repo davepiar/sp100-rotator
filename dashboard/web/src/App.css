@@ -112,7 +112,8 @@ header h1 {
   background: #1a1e26;
   border: 1px solid #252a33;
   border-radius: 12px;
-  overflow-x: auto;
+  /* overflow: visible so the symbol hover popover isn't clipped */
+  overflow: visible;
 }
 
 .empty {
@@ -170,6 +171,103 @@ table.positions .num {
 .sym {
   font-weight: 600;
   letter-spacing: 0.02em;
+}
+
+.sym-cell {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  cursor: help;
+}
+
+.sym-cell .sym {
+  border-bottom: 1px dotted rgba(139, 147, 161, 0.5);
+  padding-bottom: 1px;
+}
+
+.sym-popover {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  z-index: 10;
+  min-width: 240px;
+  max-width: 320px;
+  background: #0f1115;
+  border: 1px solid #2f3542;
+  border-radius: 10px;
+  padding: 12px 14px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.55);
+  opacity: 0;
+  transform: translateY(-4px);
+  pointer-events: none;
+  transition: opacity 120ms ease, transform 120ms ease;
+  text-align: left;
+  font-weight: 400;
+}
+
+.sym-cell:hover .sym-popover,
+.sym-cell:focus-within .sym-popover {
+  opacity: 1;
+  transform: translateY(0);
+  pointer-events: auto;
+}
+
+.pop-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+.pop-sym {
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  color: #e6e8eb;
+}
+
+.pop-exchange {
+  font-size: 10px;
+  font-weight: 600;
+  color: #8b93a1;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.pop-name {
+  font-size: 13px;
+  color: #cfd3da;
+  margin-bottom: 10px;
+  line-height: 1.35;
+}
+
+.pop-meta {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px 16px;
+  margin: 0;
+  font-size: 12px;
+}
+
+.pop-meta > div {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.pop-meta dt {
+  color: #8b93a1;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-size: 10px;
+  font-weight: 600;
+}
+
+.pop-meta dd {
+  margin: 0;
+  color: #e6e8eb;
+  font-size: 12px;
 }
 
 .side {
@@ -240,6 +338,50 @@ table.positions .num {
 
 .row-exit:hover {
   background: rgba(255, 86, 86, 0.08) !important;
+}
+
+.side-badge {
+  display: inline-block;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  padding: 3px 8px;
+  border-radius: 4px;
+  border: 1px solid transparent;
+  min-width: 42px;
+  text-align: center;
+}
+
+.side-buy {
+  color: #4ade80;
+  background: rgba(74, 222, 128, 0.12);
+  border-color: rgba(74, 222, 128, 0.35);
+}
+
+.side-sell {
+  color: #ff8a8a;
+  background: rgba(255, 86, 86, 0.12);
+  border-color: rgba(255, 86, 86, 0.4);
+}
+
+.side-other {
+  color: #8b93a1;
+  background: rgba(139, 147, 161, 0.1);
+  border-color: rgba(139, 147, 161, 0.3);
+}
+
+.type-cell,
+.tif-cell {
+  font-size: 12px;
+  color: #cfd3da;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.muted {
+  color: #8b93a1;
+  font-size: 12px;
 }
 
 .legend {
