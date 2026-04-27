@@ -71,6 +71,76 @@ Document the decision in the report. If no high-impact events match, no-op.
 If `state/economic_calendar.json` is missing or stale, log a warning and
 proceed without the kill-switch — but flag this as a hole in the report.
 
+### 2.5. News delta refresh (~10-90 s)
+
+```bash
+python scripts/fetch_news_delta.py
+```
+
+Pulls FMP `/stable/news/stock` for every draft ticker plus every currently-held
+position, filtering to publish times **after** `state/news_summary.json.generated_at`
+(set by post-close last night). Merges new items into `top_events[]`, bumps
+`generated_at`, and emits per-ticker `news_headline` flags into
+`state/premarket_data.json.flags`.
+
+Per-item classification (deterministic keyword heuristic, no LLM):
+- High impact + bullish keywords (`beat`, `tops`, `upgrade`, `breakout`, …) → `high / risk-on`.
+- High impact + bearish keywords (`miss`, `downgrade`, `lawsuit`, `recall`, `bankruptcy`, …) → `high / risk-off-margin`.
+- Anything else → `medium / neutral` (default).
+
+Phase 3 reads these flags. Behavior:
+| flag | screen action |
+|---|---|
+| `impact == "high" AND direction in ("risk-off-margin","binary")` | **soft-block**, drop from candidates with reason `news_flag: …` |
+| any other news flag | keep, attach `news_thesis_tags` for `build_diff_plan` to surface in the order's thesis |
+
+Soft-block = visible in the report; operator can `APPROVE with edits: include <ticker>`.
+
+**Budget:** 1 FMP call per unique ticker (draft ∪ held), wall-clock target ≤ 90 s.
+Free-tier `/stable/news/stock` is generous; this consumes ~12-15 calls per session.
+
+**On error or timeout:** the script emits warnings, returns 0, and pre-open continues
+without news flags. Same advisory-degrade pattern as the missing economic_calendar fallback.
+
+### 2.6. VCP screener — pre-breakout candidates (~1-2 min)
+
+```bash
+python .claude/skills/vcp-screener/scripts/screen_vcp.py \
+  --output-dir data/snapshots/$(date +%F)/vcp \
+  --max-candidates 60 --top 15
+```
+
+Pulls FMP price history for the SP100 universe and applies Mark Minervini's
+Volatility Contraction Pattern (VCP) detection. Output is consumed by Phase 3.5
+(breakout-trade-planner). FMP free-tier budget: ~80 calls per run on SP100 with
+the cap above; combined with `fetch_news_delta` (~15 calls) this still leaves
+margin for `screen_candidates` (~50) and `premarket_check` (~30).
+
+If FMP is rate-limited or VCP fails: warn-and-continue. Phase 3.5 will see no
+input and skip.
+
+### 2.7. Breadth-chart pre-market regime veto (~5 s)
+
+```bash
+python scripts/breadth_chart_veto.py
+```
+
+Wraps the `breadth-chart-analyst` skill's CSV fetcher. Reads public breadth data
+(no API key) and produces a verdict:
+
+| Verdict | Trigger | Effect on `posture.conviction_floor` |
+|---|---|---|
+| 🟢 GREEN  | breadth_200ma ≥ 60 AND no dead_cross AND uptrend ≠ RED | unchanged |
+| 🟡 YELLOW | dead_cross OR breadth_200ma 50–60 OR uptrend RED      | +0.05 (capped 0.80) |
+| 🔴 RED    | breadth_200ma < 50 OR (dead_cross AND uptrend RED)    | +0.10 (capped 0.80) |
+
+Verdict + overlay are persisted to:
+- `data/snapshots/<DATE>/breadth-chart-analyst/breadth_verdict_<ts>.json`
+- `state/evening_research.json.posture.conviction_floor` (only on YELLOW/RED)
+  + `state/evening_research.json.posture.overlays[]` (audit trail)
+
+**On error or timeout:** warn-and-continue, no posture mutation. Pre-open never hard-fails.
+
 ### 3. Final candidate screen (~1-2 min)
 
 ```bash
@@ -79,9 +149,33 @@ python scripts/screen_candidates.py --mode=final
 
 This applies all 5 hard gates against today's bars (re-fetched), runs the
 correlation prune + sector + sub-sector caps, and folds in the premarket-flag
-gate from `state/premarket_data.json` (any candidate with overnight earnings
-+ adverse gap → drop; |gap| > 5 % → soft-flag for the report). Output:
-`data/snapshots/<YYYY-MM-DD>/candidates.json`.
+gate from `state/premarket_data.json`:
+
+- **Gap flag:** overnight earnings + adverse gap < −3 % → drop; |gap| > 5 % → soft-flag.
+- **News flag (Phase 2.5 fold-in):** high-impact + risk-off-margin/binary news → drop with reason `news_flag: …`; other news headlines flow through as `news_thesis_tags` on the order.
+
+Output: `data/snapshots/<YYYY-MM-DD>/candidates.json` with new keys
+`blocked_by_news` and `news_soft_flagged` alongside the existing gap-blocked lists.
+
+### 3.5. Breakout entry refinement (~30 s, dry-run by default)
+
+```bash
+python scripts/run_breakout_planner.py
+```
+
+Reads the latest VCP screener JSON (Phase 2.6) and runs `breakout-trade-planner`
+to compute Minervini-style worst-case-risk entries for VCP candidates. Output
+saved to `data/snapshots/<DATE>/breakout/`.
+
+**Dry-run default.** Behavior gated by `state/strategy_params.json.tunable.
+execute_plan.breakout_planner_active` (default `false`). When `false`, the
+planner's output is informational only — `build_diff_plan` still uses the
+standard `mid + 5bp` offset for limits.
+
+To activate after ≥3 sessions of dry-run review: flip the flag to `true` and
+extend `build_diff_plan.py` to override limit prices for tickers that appear in
+both the rotator's picks AND the breakout-planner's actionable list. (That
+wiring is intentionally deferred — see plan doc for rationale.)
 
 ### 4. Build the plan (~10 s)
 

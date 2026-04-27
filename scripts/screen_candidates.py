@@ -351,26 +351,35 @@ def days_to_earnings(ticker: str, upcoming: dict[str, dict], today: date) -> Opt
     return delta if delta >= 0 else None  # already-passed earnings → no block
 
 
-def load_premarket_flags() -> dict[str, dict]:
+def load_premarket_flags() -> dict:
     """Read state/premarket_data.json (Phase 5 — pre-open final mode only).
 
-    Returns {ticker: flag_dict}. flag_dict has at minimum {kind, gap_pct,
-    earnings_today, advice}. Missing file → empty dict (gate becomes a no-op
-    and is logged).
+    Returns:
+        {
+            "gap":  {TICKER: gap_flag_dict},   # one per ticker (kind == "symbol_gap")
+            "news": {TICKER: [news_flag, ...]} # multiple per ticker (kind == "news_headline")
+        }
+
+    Missing file → empty dicts (gate becomes a no-op and is logged).
     """
+    out: dict = {"gap": {}, "news": {}}
     path = PROJECT / "state" / "premarket_data.json"
     if not path.exists():
         print("  premarket_data.json missing → premarket gate is a no-op", file=sys.stderr)
-        return {}
+        return out
     try:
         data = json.loads(path.read_text())
     except Exception as e:
         print(f"  premarket_data.json unreadable: {e}", file=sys.stderr)
-        return {}
-    out: dict[str, dict] = {}
+        return out
     for f in data.get("flags", []):
-        if f.get("kind") == "symbol_gap" and f.get("symbol"):
-            out[f["symbol"].upper()] = f
+        sym = (f.get("symbol") or "").upper()
+        if not sym:
+            continue
+        if f.get("kind") == "symbol_gap":
+            out["gap"][sym] = f
+        elif f.get("kind") == "news_headline":
+            out["news"].setdefault(sym, []).append(f)
     return out
 
 
@@ -498,12 +507,18 @@ def main(mode: str = "final") -> int:
         return 0
 
     # --- final mode: premarket gate + percentile gate + correlation prune + sector caps ---
-    premarket_flags = load_premarket_flags()
+    flags_by_kind = load_premarket_flags()
+    gap_flags = flags_by_kind["gap"]
+    news_flags = flags_by_kind["news"]
     premarket_blocked: list[dict] = []
     premarket_soft_flagged: list[dict] = []
+    blocked_by_news: list[dict] = []
+    news_soft_flagged: list[dict] = []
     pre_survivors: list[dict] = []
     for r in positive:
-        flag = premarket_flags.get(r["ticker"].upper())
+        sym = r["ticker"].upper()
+        flag = gap_flags.get(sym)
+        gap_blocked = False
         if flag:
             gap = flag.get("gap_pct")
             if flag.get("earnings_today") and gap is not None and gap < -3.0:
@@ -513,19 +528,69 @@ def main(mode: str = "final") -> int:
                     "gap_pct": gap,
                     "earnings_today": True,
                 })
-                continue
-            if gap is not None and abs(gap) > 5.0:
+                gap_blocked = True
+            elif gap is not None and abs(gap) > 5.0:
                 premarket_soft_flagged.append({
                     "ticker": r["ticker"],
                     "gap_pct": gap,
                     "advice": flag.get("advice", "review at runbook level"),
                 })
+        if gap_blocked:
+            continue
+
+        # News-flag gate: high-impact + risk-off-margin/binary news → soft-block.
+        # Other news headlines flow through as thesis tags (consumed by build_diff_plan).
+        items = news_flags.get(sym, [])
+        bad = [
+            n for n in items
+            if n.get("impact") == "high" and n.get("direction") in ("risk-off-margin", "binary")
+        ]
+        if bad:
+            top = bad[0]
+            blocked_by_news.append({
+                "ticker": r["ticker"],
+                "headline": (top.get("headline") or "")[:120],
+                "impact": top.get("impact"),
+                "direction": top.get("direction"),
+                "published_at": top.get("published_at"),
+                "url": top.get("url"),
+                "n_negative_high": len(bad),
+            })
+            continue
+
+        if items:
+            r["news_thesis_tags"] = [
+                f"news {(n.get('published_at') or '')[:10]}: {(n.get('headline') or '')[:60]}"
+                for n in items[:3]
+            ]
+            high_count = sum(1 for n in items if n.get("impact") == "high")
+            if high_count > 0:
+                news_soft_flagged.append({
+                    "ticker": r["ticker"],
+                    "n_headlines": len(items),
+                    "n_high_impact": high_count,
+                    "directions": sorted({n.get("direction") for n in items if n.get("direction")}),
+                })
+
         pre_survivors.append(r)
+
     if premarket_blocked:
         print(f"Premarket-gate blocked {len(premarket_blocked)}:", file=sys.stderr)
         for b_ in premarket_blocked:
             print(f"  - {b_['ticker']:5s} gap={b_['gap_pct']:+.2f}% earnings_today=True",
                   file=sys.stderr)
+    if blocked_by_news:
+        print(f"News-gate blocked {len(blocked_by_news)} (high-impact negative news):",
+              file=sys.stderr)
+        for b_ in blocked_by_news:
+            print(f"  - {b_['ticker']:5s} {b_['direction']:18s} | {b_['headline'][:80]}",
+                  file=sys.stderr)
+    if news_soft_flagged:
+        print(f"News soft-flagged {len(news_soft_flagged)} (kept, but high-impact news present):",
+              file=sys.stderr)
+        for s_ in news_soft_flagged:
+            print(f"  - {s_['ticker']:5s} headlines={s_['n_headlines']} high={s_['n_high_impact']} "
+                  f"dirs={s_['directions']}", file=sys.stderr)
     positive = pre_survivors
 
     pct_blocked: list[dict] = []
@@ -596,6 +661,8 @@ def main(mode: str = "final") -> int:
         **common_meta,
         "blocked_by_premarket_gap": premarket_blocked,
         "premarket_soft_flagged": premarket_soft_flagged,
+        "blocked_by_news": blocked_by_news,
+        "news_soft_flagged": news_soft_flagged,
         "blocked_by_rs_percentile": pct_blocked,
         "correlation_pruned": correlation_pruned,
         "blocked_by_sector_caps": sector_dropped,

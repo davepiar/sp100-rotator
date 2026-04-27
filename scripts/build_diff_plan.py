@@ -86,6 +86,9 @@ def main() -> int:
             "accum": p["accum"],
             "vol_20d": p["vol_20d"],
             "target_weight": target_weight,
+            # Per-ticker news headlines from screen_candidates' news-flag gate.
+            # Surface-only: appended to thesis_tags below; no conviction/sizing impact.
+            "news_thesis_tags": p.get("news_thesis_tags", []),
         }
 
     orders = []
@@ -131,6 +134,7 @@ def main() -> int:
                     f"top-10 {target['sector']}",
                     f"3M RS +{target['rs_3m']*100:.1f}%",
                     f"drift {drift*100:+.2f}% < threshold → HOLD",
+                    *target.get("news_thesis_tags", []),
                 ],
             })
             sector_weights[target["sector"]] = sector_weights.get(target["sector"], 0.0) + cur_weight
@@ -156,6 +160,7 @@ def main() -> int:
                     f"top-10 {target['sector']}",
                     f"3M RS +{target['rs_3m']*100:.1f}%",
                     f"size up {drift*100:+.2f}%",
+                    *target.get("news_thesis_tags", []),
                 ],
             })
             sector_weights[target["sector"]] = sector_weights.get(target["sector"], 0.0) + final_weight
@@ -175,6 +180,7 @@ def main() -> int:
                 "conviction": round(target["conviction"], 3),
                 "thesis_tags": [
                     f"trim to target {tgt*100:.2f}%",
+                    *target.get("news_thesis_tags", []),
                 ],
             })
             sector_weights[target["sector"]] = sector_weights.get(target["sector"], 0.0) + (cur_mv - qty * limit_px) / equity
@@ -207,6 +213,7 @@ def main() -> int:
                 f"new entry in {target['sector']}",
                 f"3M RS +{target['rs_3m']*100:.1f}%",
                 f"trend score {target['trend']:.2f} / accum {target['accum']:.2f}",
+                *target.get("news_thesis_tags", []),
             ],
         })
         sector_weights[target["sector"]] = sector_weights.get(target["sector"], 0.0) + actual_weight

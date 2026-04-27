@@ -180,6 +180,10 @@ Tier 1 — pipeline core (already wired into post-close / pre-open):
 | `exposure-coach` | Market Posture synthesis | daily (`post-close`) |
 | `position-sizer` | Per-trade sizing | daily (`pre-open`) |
 | `earnings-calendar` | Upcoming-earnings dates | daily (`post-close`, via `fetch_earnings_window.py`) |
+| `market-news-analyst` | Full 10-day news synthesis (`post-close`) and per-ticker delta (`pre-open` Phase 2.5 via `scripts/fetch_news_delta.py`) | daily (both sessions) |
+| `breadth-chart-analyst` | Pre-market regime veto on S&P 500 200DMA breadth + Uptrend Ratio. Adjusts `posture.conviction_floor` on YELLOW/RED. | daily (`pre-open` Phase 2.7 via `scripts/breadth_chart_veto.py`) |
+| `vcp-screener` | Volatility-contraction-pattern detection over SP100 | daily (`pre-open` Phase 2.6) |
+| `breakout-trade-planner` | Minervini worst-case-risk entries for VCP candidates. Dry-run by default; gated by `strategy_params.tunable.execute_plan.breakout_planner_active`. | daily (`pre-open` Phase 3.5 via `scripts/run_breakout_planner.py`) |
 | `macro-regime-detector` | Cross-asset regime | weekly (`weekly-context`) |
 | `sector-analyst` | Sector rotation | weekly (`weekly-context`) |
 | `theme-detector` | Narrative themes | weekly (`weekly-context`) |
@@ -193,10 +197,8 @@ wired into the runbooks; invoke ad-hoc until integrated):
 |---|---|---|
 | `signal-postmortem` | Track FP/FN per signal, feed `monthly-recalibration` | No external API. Closes the measurement loop. |
 | `data-quality-checker` | Validate daily report before publication | Advisory only, no API. Run end of every session. |
-| `market-news-analyst` | 10-day market-news summary | WebSearch/WebFetch only — no API key. |
 | `economic-calendar-fetcher` | FOMC/CPI/NFP releases | FMP free tier (1 call/day). |
 | `pead-screener` | Post-earnings-drift candidates | FMP free tier OK with default lookback. |
-| `vcp-screener` | Volatility-contraction-pattern entries | FMP free tier OK at top-100; **paid** for full SP500 (we run on SP100 so free tier fits). |
 | `canslim-screener` | O'Neil growth screen | **EXCEEDS 250-call free tier** at default settings (~283 calls/run). Cap with `--max-candidates 35` to stay under, or upgrade FMP. |
 | `earnings-trade-analyzer` | Post-earnings 5-factor scoring | FMP free tier OK at default 2-day lookback. |
 

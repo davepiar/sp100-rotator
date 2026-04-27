@@ -19,7 +19,8 @@
     },
     "execute_plan": {
       "stop_loss_pct":   { "value": 0.08, "unit": "fraction" },
-      "take_profit_pct": { "value": 0.25, "unit": "fraction" }
+      "take_profit_pct": { "value": 0.25, "unit": "fraction" },
+      "breakout_planner_active": { "value": false, "unit": "bool", "note": "When true, build_diff_plan will use breakout-trade-planner's worst-case-risk entries for VCP-tagged candidates. Keep false for ≥3 sessions of dry-run review before flipping." }
     },
     "morning_validation": {
       "pre_open_gap_flag_pct": { "value": 0.03,  "unit": "fraction" },
