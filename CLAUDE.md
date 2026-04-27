@@ -19,7 +19,7 @@ Daily automated portfolio-rotation bot over the S&P 100. One session per day aft
 | Max positions | 10 |
 | Min positions when deployed | 5 |
 | Max turnover per session | 30 trades |
-| Allowed order types | market, limit (day/gtc) |
+| Allowed order types | market, limit, stop (stop is sell-only — defensive) (day/gtc) |
 | Allowed sides | buy, sell (no shorts in v1) |
 | Trading window | Only place orders when US market is open OR as MOO/LOO for next open |
 

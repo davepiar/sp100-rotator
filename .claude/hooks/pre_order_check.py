@@ -16,9 +16,10 @@ CREDS = Path.home() / ".alpaca" / "credentials"
 MAX_POSITIONS = 10
 MAX_POSITION_PCT = 0.05
 MAX_SESSION_TURNOVER = 30
-ALLOWED_TYPES = {"market", "limit"}
+ALLOWED_TYPES = {"market", "limit", "stop"}     # stop SELL only (defensive)
 ALLOWED_SIDES = {"buy", "sell"}
 ALLOWED_TIF = {"day", "gtc", "opg", "cls", "ioc", "fok"}
+SELL_ONLY_TYPES = {"stop"}                       # never used to enter a short
 
 
 def fail(msg):
@@ -90,6 +91,10 @@ def main():
         fail(f"side '{side}' not in {sorted(ALLOWED_SIDES)}")
     if otype not in ALLOWED_TYPES:
         fail(f"type '{otype}' not in {sorted(ALLOWED_TYPES)}")
+    if otype in SELL_ONLY_TYPES and side != "sell":
+        fail(f"type '{otype}' is sell-only (defensive); refusing side={side}")
+    if otype == "stop" and not body.get("stop_price"):
+        fail("stop order missing stop_price")
     if tif and tif not in ALLOWED_TIF:
         fail(f"time_in_force '{tif}' not allowed")
     if qty <= 0:
