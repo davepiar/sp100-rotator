@@ -4,7 +4,7 @@ Runs in `pre-open` Phase 2.5 between premarket_check and screen_candidates.
 
 Inputs (read-only):
   state/news_summary.json     — produced by post-close; we extend it
-  state/evening_research.json — draft_tickers list
+  state/research_bundle.json — draft_tickers list
   state/portfolio.json        — current holdings (so news on what we hold counts too)
   state/premarket_data.json   — we mutate this to add news_flags
 
@@ -33,7 +33,7 @@ import requests
 PROJECT = Path(__file__).resolve().parents[1]
 NEWS_PATH = PROJECT / "state" / "news_summary.json"
 PREMARKET_PATH = PROJECT / "state" / "premarket_data.json"
-RESEARCH_PATH = PROJECT / "state" / "evening_research.json"
+RESEARCH_PATH = PROJECT / "state" / "research_bundle.json"
 PORTFOLIO_PATH = PROJECT / "state" / "portfolio.json"
 
 ET = ZoneInfo("America/New_York")

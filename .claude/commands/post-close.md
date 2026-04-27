@@ -6,11 +6,11 @@ allowed-tools: Bash, Read, Write, Edit, Skill, TodoWrite
 Post-close SP100 research session — !`date +%Y-%m-%d`. Paper account only.
 
 Read `sessions/post_close.md` and execute it phase by phase. **Stop after writing
-`state/evening_research.json` and `data/reports/<date>-research.md`.** Do NOT
+`state/research_bundle.json` and `data/reports/<date>-research.md`.** Do NOT
 build a trade plan. Do NOT request `APPROVE`. Do NOT call `scripts/build_diff_plan.py`
 or `scripts/execute_plan.py`.
 
-Tomorrow's pre-open session at 13:00 Madrid will pick up `evening_research.json`,
+Tomorrow's pre-open session at 13:00 Madrid will pick up `research_bundle.json`,
 re-screen with fresh data, and place the actual orders.
 
 Quick recap of phases:
@@ -34,7 +34,7 @@ Quick recap of phases:
    - 5b. `pead-screener` skill (Mode B: consume earnings-trade-analyzer JSON) → `pead_picks` merged into `candidates_draft.json`.
    - 5c. Read `state/weekly_screens.json` (from `/weekly-context`); tag draft names that hit vcp / canslim picks for a small conviction bonus in tomorrow's pre-open.
 6. **Persist research bundle** — `python scripts/write_research_bundle.py
-   --posture-json='<posture from step 4>'`. Writes `state/evening_research.json`.
+   --posture-json='<posture from step 4>'`. Writes `state/research_bundle.json`.
 7. **Write report + validate** — `data/reports/<date>-research.md` with
    signals, news headlines (top 5), economic-calendar lookahead,
    posture, draft table, open orders. Then invoke `data-quality-checker`

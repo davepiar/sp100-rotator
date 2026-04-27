@@ -1,4 +1,4 @@
-"""Write state/evening_research.json — handoff bundle from post-close to pre-open.
+"""Write state/research_bundle.json — handoff bundle from post-close to pre-open.
 
 Reads:
   data/snapshots/<SESSION_DATE>/candidates_draft.json (must exist; produced
@@ -6,7 +6,7 @@ Reads:
   --posture-file <path>  OR  --posture-json '{...}'   (required; from exposure-coach output)
 
 Writes:
-  state/evening_research.json with:
+  state/research_bundle.json with:
     * Market posture (ceiling, tilt, new-entries-allowed, cash-priority)
     * Draft ticker list (top-N from the draft screen)
     * Signal hashes (sha256 of the draft file — pre-open checks freshness)
@@ -28,7 +28,7 @@ from pathlib import Path
 PROJECT = Path(__file__).resolve().parents[1]
 SESSION_DATE = os.environ.get("SESSION_DATE", date.today().isoformat())
 SNAP_DIR = PROJECT / "data" / "snapshots" / SESSION_DATE
-OUT_PATH = PROJECT / "state" / "evening_research.json"
+OUT_PATH = PROJECT / "state" / "research_bundle.json"
 
 # Required posture keys (validated to surface schema drift early)
 POSTURE_KEYS = {"exposure_ceiling_pct", "new_entries_allowed", "cash_priority"}

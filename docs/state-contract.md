@@ -55,7 +55,7 @@ Sessions reading a state file MUST check `valid_until`; if stale, abort and surf
 - Contents: `{macro_regime, sector_rotation, themes, bubble, breadth}` — see
   `sessions/weekly_context.md` for the schema.
 
-### `state/evening_research.json` *(Phase 5 — produced by `post-close`)*
+### `state/research_bundle.json` *(Phase 5 — produced by `post-close`)*
 - **Producer:** `scripts/write_research_bundle.py`
 - **Consumer:** `pre-open` preflight (freshness check; abort if missing or stale)
 - **Refresh:** every `post-close` session
@@ -92,7 +92,7 @@ Sessions reading a state file MUST check `valid_until`; if stale, abort and surf
 - **Refresh:** ~13:00 Madrid (start of pre-open)
 - **Validity:** 2h
 - Contents: SPY/QQQ pre-market, UVXY proxy for VIX, per-symbol gap % for
-  every ticker in `evening_research.json.draft_tickers`, overnight earnings
+  every ticker in `research_bundle.json.draft_tickers`, overnight earnings
   rows, threshold-driven `flags`.
 
 ### `state/morning_decisions.json` *(retired in Phase 5)*

@@ -121,11 +121,11 @@ def main() -> int:
         return 2
 
     # Source of truth for "what to look at" depends on which session is running:
-    #   * pre-open (new flow): state/evening_research.json.draft_tickers exists,
+    #   * pre-open (new flow): state/research_bundle.json.draft_tickers exists,
     #     state/target_weights.json does NOT exist yet (built later in pre-open).
     #   * legacy / re-runs: state/target_weights.json exists, draft tickers may
     #     not — fall back to it.
-    research_path = STATE / "evening_research.json"
+    research_path = STATE / "research_bundle.json"
     target_path = STATE / "target_weights.json"
     pending_buy_symbols: list[str] = []
     source_label = "none"
@@ -133,9 +133,9 @@ def main() -> int:
         try:
             research = json.loads(research_path.read_text())
             pending_buy_symbols = sorted(set(research.get("draft_tickers") or []))
-            source_label = f"evening_research.json (draft, n={len(pending_buy_symbols)})"
+            source_label = f"research_bundle.json (draft, n={len(pending_buy_symbols)})"
         except Exception as e:
-            print(f"WARN: evening_research.json unreadable: {e}", file=sys.stderr)
+            print(f"WARN: research_bundle.json unreadable: {e}", file=sys.stderr)
     if not pending_buy_symbols and target_path.exists():
         try:
             target = json.loads(target_path.read_text())
@@ -147,7 +147,7 @@ def main() -> int:
             print(f"WARN: target_weights.json unreadable: {e}", file=sys.stderr)
     if not pending_buy_symbols:
         print("ERROR: no draft tickers to validate — run /post-close first "
-              "(produces state/evening_research.json) or place a signed-off "
+              "(produces state/research_bundle.json) or place a signed-off "
               "state/target_weights.json", file=sys.stderr)
         return 2
     print(f"  symbols source: {source_label}", file=sys.stderr)

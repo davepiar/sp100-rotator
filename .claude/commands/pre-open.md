@@ -14,7 +14,7 @@ to `state/target_weights.json` outside 13:00-15:25 Madrid.
 
 Quick recap of phases:
 
-1. **Preflight-lite** — load creds, freshness-check `state/evening_research.json`
+1. **Preflight-lite** — load creds, freshness-check `state/research_bundle.json`
    (abort if missing or `valid_until < now`; tell operator to run `/post-close`
    first), snapshot account, list open orders. Ask operator before cancelling
    any open order. Do NOT auto-cancel.
@@ -61,7 +61,7 @@ universe only, no shorts/options/crypto/leveraged ETFs.
 Circuit breakers: --max-turns 120, --max-budget-usd 2.00, intraday DD < −2 %
 HARD STOP, 30-trade turnover cap, 10-position cap, 5 % notional per position.
 
-If `state/evening_research.json` is missing or stale: abort, tell the operator
+If `state/research_bundle.json` is missing or stale: abort, tell the operator
 to run `/post-close` first. Don't try to limp along with a fresh full screen
 unless the operator explicitly confirms post-close was skipped for a known
 reason (holiday, error).

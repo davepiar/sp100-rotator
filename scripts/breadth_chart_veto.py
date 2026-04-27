@@ -8,7 +8,7 @@ Verdict logic (deterministic, no LLM):
   - YELLOW (soft veto): dead_cross OR (50 <= breadth_200ma < 60) OR uptrend RED
   - GREEN (no veto):    everything else
 
-On YELLOW or RED, tighten `state/evening_research.json.posture.conviction_floor`
+On YELLOW or RED, tighten `state/research_bundle.json.posture.conviction_floor`
 by +0.05 (YELLOW) or +0.10 (RED), capped at 0.80. This is a posture overlay —
 build_diff_plan reads it via the existing kill-switch path. Today's plan flow
 already inherits the floor through the kill-switch logic; future code may also
@@ -16,7 +16,7 @@ read it directly.
 
 Outputs:
   data/snapshots/<DATE>/breadth-chart-analyst/breadth_verdict_<timestamp>.json
-  state/evening_research.json (only mutated on YELLOW/RED)
+  state/research_bundle.json (only mutated on YELLOW/RED)
 
 Failure: warn-and-continue. Pre-open never hard-fails on this phase.
 """
@@ -33,7 +33,7 @@ PROJECT = Path(__file__).resolve().parents[1]
 SKILL_FETCHER = PROJECT / ".claude" / "skills" / "breadth-chart-analyst" / "scripts" / "fetch_breadth_csv.py"
 SESSION_DATE = os.environ.get("SESSION_DATE", date.today().isoformat())
 OUT_DIR = PROJECT / "data" / "snapshots" / SESSION_DATE / "breadth-chart-analyst"
-RESEARCH_PATH = PROJECT / "state" / "evening_research.json"
+RESEARCH_PATH = PROJECT / "state" / "research_bundle.json"
 
 YELLOW_BUMP = 0.05
 RED_BUMP = 0.10
@@ -104,7 +104,7 @@ def maybe_tighten_floor(bump: float, verdict: str) -> dict | None:
     try:
         bundle = json.loads(RESEARCH_PATH.read_text())
     except (OSError, json.JSONDecodeError) as e:
-        print(f"WARN: cannot read evening_research.json: {e}", file=sys.stderr)
+        print(f"WARN: cannot read research_bundle.json: {e}", file=sys.stderr)
         return None
     posture = bundle.setdefault("posture", {})
     old = float(posture.get("conviction_floor", 0.55))
@@ -172,7 +172,7 @@ def main() -> int:
     if floor_change:
         print(f"  → posture.conviction_floor: {floor_change['old']:.2f} → {floor_change['new']:.2f} (+{floor_change['bump']:.2f})")
     elif bump > 0:
-        print(f"  → conviction_floor unchanged (already at cap or evening_research missing)")
+        print(f"  → conviction_floor unchanged (already at cap or research_bundle missing)")
     print(f"Wrote {out_path}")
     return 0
 

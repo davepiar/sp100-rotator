@@ -5,7 +5,7 @@ Purpose: gather signals, build market posture, scout a draft candidate list.
 **Does not propose orders, does not request approval, does not execute.**
 
 The decision and execution happen in the `pre-open` session at 13:00 Madrid.
-This session's only output that affects tomorrow is `state/evening_research.json`.
+This session's only output that affects tomorrow is `state/research_bundle.json`.
 
 ---
 
@@ -147,7 +147,7 @@ of starting from scratch.
 python scripts/write_research_bundle.py --posture-json='<posture from step 4>'
 ```
 
-Writes `state/evening_research.json` with `posture`, `draft_tickers`,
+Writes `state/research_bundle.json` with `posture`, `draft_tickers`,
 `signal_hashes`, and `valid_until = next-open ET`. The pre-open session's
 preflight checks this file's freshness and aborts if missing or stale.
 

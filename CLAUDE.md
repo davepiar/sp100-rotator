@@ -108,7 +108,7 @@ Runbook: [`sessions/post_close.md`](sessions/post_close.md).
    prune, no sector caps.
 6. **Persist research bundle** —
    `python scripts/write_research_bundle.py --posture-json='…'`. Writes
-   `state/evening_research.json` with posture + draft tickers + signal hashes
+   `state/research_bundle.json` with posture + draft tickers + signal hashes
    + `valid_until = next-open ET`.
 7. **Report** — `data/reports/<date>-research.md`.
 
@@ -119,7 +119,7 @@ Runbook: [`sessions/post_close.md`](sessions/post_close.md).
 Runbook: [`sessions/pre_open.md`](sessions/pre_open.md). Hard cutoff
 **15:25 Madrid** — if no `APPROVE` by then, skip the day.
 
-1. **Preflight-lite** — load creds, freshness-check `state/evening_research.json`
+1. **Preflight-lite** — load creds, freshness-check `state/research_bundle.json`
    (abort if missing or stale), snapshot account, list open orders, ask before
    cancelling.
 2. **Pre-market** — `python scripts/premarket_check.py` writes

@@ -17,14 +17,14 @@ artifact).
 
 | Path | Producer | Required |
 |---|---|---|
-| `state/evening_research.json` | `post-close` (last night) | yes — abort if missing or `valid_until` < now |
+| `state/research_bundle.json` | `post-close` (last night) | yes — abort if missing or `valid_until` < now |
 | `state/portfolio.json` | `post-close` reconcile | yes |
 | `state/strategy_params.json` | `monthly-recalibration` | yes (defaults if missing) |
 | `state/upcoming_earnings.json` | `post-close` | yes — read by the screen's earnings gate |
 | `state/economic_calendar.json` | `post-close` | yes — read for the macro kill-switch in Phase 2 |
 | Alpaca + FMP credentials | `~/.alpaca/credentials` | yes |
 
-If `evening_research.json` is missing or stale, **abort** with
+If `research_bundle.json` is missing or stale, **abort** with
 "run `/post-close` first to refresh the handoff bundle, or run
 `scripts/screen_candidates.py --mode=final` directly to bypass the gate
 (advanced — only when the operator knows the post-close was skipped for a
@@ -40,7 +40,7 @@ known reason such as a holiday).
 set -a; . /c/Users/dpineda/.alpaca/credentials; set +a
 ```
 
-- Freshness check on `state/evening_research.json`. Abort if missing or stale.
+- Freshness check on `state/research_bundle.json`. Abort if missing or stale.
 - `GET /v2/account` → fresh equity, cash, buying_power, drawdown vs last_equity.
   If intraday DD < −2 %, **HARD STOP**.
 - `GET /v2/orders?status=open` → list any open orders (e.g. unfilled GTCs from
@@ -136,8 +136,8 @@ Wraps the `breadth-chart-analyst` skill's CSV fetcher. Reads public breadth data
 
 Verdict + overlay are persisted to:
 - `data/snapshots/<DATE>/breadth-chart-analyst/breadth_verdict_<ts>.json`
-- `state/evening_research.json.posture.conviction_floor` (only on YELLOW/RED)
-  + `state/evening_research.json.posture.overlays[]` (audit trail)
+- `state/research_bundle.json.posture.conviction_floor` (only on YELLOW/RED)
+  + `state/research_bundle.json.posture.overlays[]` (audit trail)
 
 **On error or timeout:** warn-and-continue, no posture mutation. Pre-open never hard-fails.
 
@@ -258,8 +258,8 @@ python scripts/execute_plan.py
 
 | Scenario | Action |
 |---|---|
-| `state/evening_research.json` missing | Abort. Tell operator to run `/post-close` first. |
-| `state/evening_research.json` stale (`valid_until < now`) | Abort with same message. |
+| `state/research_bundle.json` missing | Abort. Tell operator to run `/post-close` first. |
+| `state/research_bundle.json` stale (`valid_until < now`) | Abort with same message. |
 | `state/economic_calendar.json` missing or stale | Warn, skip the kill-switch phase, flag in the report. |
 | `state/premarket_data.json` write fails | Continue without premarket-flag gate; warn loudly in report. |
 | Skill / API errors during screen | If recoverable, retry once. Otherwise abort. |
