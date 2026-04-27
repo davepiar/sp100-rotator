@@ -1,10 +1,20 @@
-"""Execute today's approved trade plan: place limit GTC orders per trade_plan.json.
+"""Execute today's approved trade plan: place bracket buy orders + simple sell limits.
 
 Preconditions:
   - state/target_weights.json must have signed_off=True
   - data/snapshots/{date}/trade_plan.json must exist
 Appends every request/response to state/trade_log.jsonl (one record per order).
-Refuses to execute SELL in v1 (CLAUDE.md: no shorts — SELL only if we already hold).
+
+Each BUY is placed as a bracket order:
+  * Parent: limit BUY at trade_plan.limit_price (TIF=gtc)
+  * Stop-loss child: stop at limit_price * (1 - STOP_LOSS_PCT)
+  * Take-profit child: limit at limit_price * (1 + TAKE_PROFIT_PCT) — wide so it rarely fires
+This guarantees every long position has a stop attached, addressing the DE-style
+"floating loser with no plan" pattern from the 2026-04-26 post-mortem.
+
+No-chase guard (added 2026-04-26): refuse to place a new BUY for any symbol that
+already has an open order (any side) at Alpaca. Forces operator to cancel/replace
+rather than silently pile on at a worse price (DOW +4%, AVGO +4.6% chases last week).
 """
 from __future__ import annotations
 
@@ -22,6 +32,9 @@ SNAP = PROJECT / "data" / "snapshots" / TODAY
 STATE = PROJECT / "state"
 TRADE_LOG = STATE / "trade_log.jsonl"
 
+STOP_LOSS_PCT   = 0.08    # bracket stop at entry * (1 - 0.08)
+TAKE_PROFIT_PCT = 0.25    # bracket TP at entry * (1 + 0.25); wide on purpose
+
 
 def headers() -> dict:
     return {
@@ -35,6 +48,39 @@ def log(event: dict) -> None:
     event["ts"] = datetime.now(timezone.utc).isoformat()
     with open(TRADE_LOG, "a", encoding="utf-8") as f:
         f.write(json.dumps(event) + "\n")
+
+
+def fetch_open_orders(base: str) -> dict[str, list[dict]]:
+    """Return {symbol: [open orders...]} from Alpaca. Used for the no-chase guard."""
+    r = requests.get(
+        f"{base}/v2/orders",
+        headers={k: v for k, v in headers().items() if k != "Content-Type"},
+        params={"status": "open", "limit": 200},
+        timeout=30,
+    )
+    r.raise_for_status()
+    out: dict[str, list[dict]] = {}
+    for o in r.json():
+        out.setdefault(o["symbol"].upper(), []).append(o)
+    return out
+
+
+def build_buy_payload(o: dict) -> dict:
+    """Bracket buy: limit parent + stop-loss child + take-profit child."""
+    limit = float(o["limit_price"])
+    stop_px = round(limit * (1 - STOP_LOSS_PCT), 2)
+    tp_px   = round(limit * (1 + TAKE_PROFIT_PCT), 2)
+    return {
+        "symbol": o["ticker"],
+        "qty": str(o["qty"]),
+        "side": "buy",
+        "type": "limit",
+        "time_in_force": "gtc",
+        "limit_price": str(limit),
+        "order_class": "bracket",
+        "stop_loss":   {"stop_price":  str(stop_px)},
+        "take_profit": {"limit_price": str(tp_px)},
+    }
 
 
 def main() -> int:
@@ -51,16 +97,46 @@ def main() -> int:
     base = os.environ["ALPACA_BASE_URL"]
     results = []
 
+    # No-chase guard: any symbol with a currently open order is off-limits for new BUYs.
+    open_orders = fetch_open_orders(base)
+    chase_blocked: list[dict] = []
+    safe_buy_orders: list[dict] = []
+    for o in buy_orders:
+        sym = o["ticker"].upper()
+        if sym in open_orders:
+            existing = open_orders[sym][0]
+            chase_blocked.append({
+                "ticker": sym,
+                "proposed_limit": o["limit_price"],
+                "existing_order_id": existing.get("id"),
+                "existing_side": existing.get("side"),
+                "existing_limit": existing.get("limit_price"),
+                "existing_status": existing.get("status"),
+            })
+            log({"action": "no_chase_block", "ticker": sym, "proposed_limit": o["limit_price"],
+                 "existing": existing})
+            continue
+        safe_buy_orders.append(o)
+    if chase_blocked:
+        print(f"  no-chase guard blocked {len(chase_blocked)} BUY(s):")
+        for c in chase_blocked:
+            print(f"    {c['ticker']:5s} proposed {c['proposed_limit']} — existing "
+                  f"{c['existing_side']} {c['existing_limit']} ({c['existing_status']}, id {c['existing_order_id'][:8] if c['existing_order_id'] else '?'})")
+    buy_orders = safe_buy_orders
+
     for o in sell_orders + buy_orders:
         side = "sell" if o["action"].startswith("SELL") else "buy"
-        payload = {
-            "symbol": o["ticker"],
-            "qty": str(o["qty"]),
-            "side": side,
-            "type": "limit",
-            "time_in_force": "gtc",
-            "limit_price": str(o["limit_price"]),
-        }
+        if side == "buy":
+            payload = build_buy_payload(o)
+        else:
+            payload = {
+                "symbol": o["ticker"],
+                "qty": str(o["qty"]),
+                "side": side,
+                "type": "limit",
+                "time_in_force": "gtc",
+                "limit_price": str(o["limit_price"]),
+            }
         log({"action": "submit_request", "payload": payload, "source_plan": o})
         try:
             r = requests.post(f"{base}/v2/orders", headers=headers(),
@@ -92,6 +168,9 @@ def main() -> int:
         "submitted": len(results),
         "accepted": sum(1 for r in results if r.get("ok")),
         "failed": sum(1 for r in results if not r.get("ok")),
+        "no_chase_blocked": chase_blocked,
+        "stop_loss_pct": STOP_LOSS_PCT,
+        "take_profit_pct": TAKE_PROFIT_PCT,
         "orders": results,
     }
     (SNAP / "execution_summary.json").write_text(json.dumps(summary, indent=2))
