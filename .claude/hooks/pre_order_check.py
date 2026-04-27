@@ -102,6 +102,11 @@ def main():
     except Exception as e:
         fail(f"positions fetch failed: {e}")
     current_symbols = {p["symbol"].upper() for p in positions}
+    if side == "buy" and len(positions) > MAX_POSITIONS:
+        fail(
+            f"position count {len(positions)} already exceeds max {MAX_POSITIONS} "
+            f"(state drift) — close a position before any new buy"
+        )
     if side == "buy" and symbol not in current_symbols and len(positions) >= MAX_POSITIONS:
         fail(f"would exceed max {MAX_POSITIONS} positions (holding {len(positions)})")
 

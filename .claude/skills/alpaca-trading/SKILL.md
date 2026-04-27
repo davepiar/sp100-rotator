@@ -9,11 +9,11 @@ Use the Alpaca REST API directly via `curl` (the alpaca-mcp-server has a Windows
 
 ## Credentials
 
-Load credentials by sourcing `C:\Users\thepi\.alpaca\credentials` (a key=value file, user-only ACL). It defines `ALPACA_API_KEY`, `ALPACA_SECRET_KEY`, `ALPACA_BASE_URL`, `ALPACA_DATA_URL`.
+Load credentials by sourcing `C:\Users\dpineda\.alpaca\credentials` (a key=value file, user-only ACL). It defines `ALPACA_API_KEY`, `ALPACA_SECRET_KEY`, `ALPACA_BASE_URL`, `ALPACA_DATA_URL`.
 
 In bash:
 ```bash
-set -a; . /c/Users/thepi/.alpaca/credentials; set +a
+set -a; . /c/Users/dpineda/.alpaca/credentials; set +a
 ```
 
 Never echo `ALPACA_SECRET_KEY` to the user or include it in any output.
