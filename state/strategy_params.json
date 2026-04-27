@@ -1,0 +1,50 @@
+{
+  "schema_version": "1.0",
+  "generated_at": "2026-04-26T22:00:00Z",
+  "valid_until": "2026-05-31T22:00:00Z",
+  "rationale": "Initial seed from Phase 0.5/1 hard-gate tuning (see docs/replay-2026-04-w17.md). Re-evaluated by monthly-recalibration first Saturday of each month.",
+  "tunable": {
+    "screen_candidates": {
+      "rs_3m_hard_floor":   { "value": 0.0,   "unit": "fraction", "note": "block names with 3M return below SPY" },
+      "rs_20d_hard_floor":  { "value": -0.10, "unit": "fraction", "note": "block names underperforming SPY by >10pp over 20D" },
+      "rs_3m_pct_floor":    { "value": 0.0,   "unit": "fraction", "note": "0.0 = informational; 0.30-0.50 if backtest validates" },
+      "trend_bear_cross_tolerance": { "value": 0.99, "unit": "ratio", "note": "SMA20 must be >= SMA50 * this; 0.99 = allow 1% bear cross" },
+      "earnings_blocker_days": { "value": 14, "unit": "days" },
+      "sub_sector_name_caps": { "Semis": 4 }
+    },
+    "build_diff_plan": {
+      "drift_threshold_pct": { "value": 0.005, "unit": "fraction", "note": "below this drift % of equity → HOLD instead of trim/top-up" },
+      "offset_bps":          { "value": 5,     "unit": "bp" },
+      "base_position_cap":   { "value": 0.05,  "unit": "fraction" }
+    },
+    "execute_plan": {
+      "stop_loss_pct":   { "value": 0.08, "unit": "fraction" },
+      "take_profit_pct": { "value": 0.25, "unit": "fraction" }
+    },
+    "morning_validation": {
+      "pre_open_gap_flag_pct": { "value": 0.03,  "unit": "fraction" },
+      "spy_pre_open_big_down": { "value": -0.015, "unit": "fraction" },
+      "vix_overnight_big_up":  { "value": 0.15,  "unit": "fraction" }
+    },
+    "exposure_coach": {
+      "default_ceiling_pct":   { "value": 0.60, "unit": "fraction" },
+      "regime_ceiling_offsets": {
+        "Concentration":  -0.05,
+        "Broadening":      0.00,
+        "Contraction":    -0.20,
+        "Inflationary":   -0.10,
+        "Transitional":   -0.10
+      }
+    }
+  },
+  "fixed": {
+    "max_positions": 10,
+    "max_position_pct": 0.05,
+    "max_session_turnover": 30,
+    "intraday_dd_hard_stop_pct": -0.02,
+    "allowed_order_types": ["market", "limit"],
+    "allowed_sides": ["buy", "sell"],
+    "_note": "Changes to fixed params require an architectural decision, not a monthly tune. Update CLAUDE.md alongside any change here."
+  },
+  "monthly_review_history": []
+}

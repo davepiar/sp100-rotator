@@ -10,10 +10,17 @@ credentials
 # Claude worktrees (git plumbing, not source)
 .claude/worktrees/
 
-# Runtime state & data
-state/
+# Runtime state & data — ignore contents but allow specific seeds via !
+# (cannot re-include children of an ignored parent dir; use state/* not state/)
+state/*
+!state/strategy_params.json
+!state/postmortem_outcomes.jsonl
+!state/trade_log.jsonl
+
 data/snapshots/
 data/reports/
+data/weekly/
+data/monthly/
 
 # Claude memory files (personal notes on user/project)
 .claude/memory/
