@@ -120,14 +120,37 @@ def main() -> int:
         print("ERROR: alpaca creds not loaded", file=sys.stderr)
         return 2
 
+    # Source of truth for "what to look at" depends on which session is running:
+    #   * pre-open (new flow): state/evening_research.json.draft_tickers exists,
+    #     state/target_weights.json does NOT exist yet (built later in pre-open).
+    #   * legacy / re-runs: state/target_weights.json exists, draft tickers may
+    #     not — fall back to it.
+    research_path = STATE / "evening_research.json"
     target_path = STATE / "target_weights.json"
-    if not target_path.exists():
-        print("ERROR: state/target_weights.json missing — nothing to validate", file=sys.stderr)
+    pending_buy_symbols: list[str] = []
+    source_label = "none"
+    if research_path.exists():
+        try:
+            research = json.loads(research_path.read_text())
+            pending_buy_symbols = sorted(set(research.get("draft_tickers") or []))
+            source_label = f"evening_research.json (draft, n={len(pending_buy_symbols)})"
+        except Exception as e:
+            print(f"WARN: evening_research.json unreadable: {e}", file=sys.stderr)
+    if not pending_buy_symbols and target_path.exists():
+        try:
+            target = json.loads(target_path.read_text())
+            pending_buy_symbols = sorted({
+                s for s, w in (target.get("positions") or {}).items() if (w or 0) > 0
+            })
+            source_label = f"target_weights.json (legacy, n={len(pending_buy_symbols)})"
+        except Exception as e:
+            print(f"WARN: target_weights.json unreadable: {e}", file=sys.stderr)
+    if not pending_buy_symbols:
+        print("ERROR: no draft tickers to validate — run /post-close first "
+              "(produces state/evening_research.json) or place a signed-off "
+              "state/target_weights.json", file=sys.stderr)
         return 2
-    target = json.loads(target_path.read_text())
-    pending_buy_symbols = sorted({
-        s for s, w in target.get("positions", {}).items() if (w or 0) > 0
-    })
+    print(f"  symbols source: {source_label}", file=sys.stderr)
 
     # Index-level pre-market signals
     indices = {}
