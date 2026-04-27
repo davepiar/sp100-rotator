@@ -1,0 +1,12 @@
+{
+  "_doc": "Manual override for upcoming-earnings dates. Used by scripts/fetch_earnings_window.py and scripts/screen_candidates.py. Add an entry whenever you know an SP100 ticker's next earnings date and FMP doesn't have it (FMP free tier returns ~25 rows/week, missing many SP100 names). Manual entries override FMP on conflict. Re-validate at least once per month.",
+  "_schema": {
+    "symbol": "ticker (uppercase)",
+    "date": "YYYY-MM-DD of the announcement (use the announce date, not fiscal-quarter-end)",
+    "eps_est": "optional float",
+    "revenue_est": "optional integer (USD)",
+    "note": "optional free-text source/confidence"
+  },
+  "entries": [
+  ]
+}
