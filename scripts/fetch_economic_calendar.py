@@ -10,6 +10,11 @@ Read by `pre-open` Phase 2 (macro kill-switch) and `monthly-recalibration`
 FMP free tier: 1 call per session. The skill `economic-calendar-fetcher`
 is a richer LLM-driven version of this; this script is the unattended
 fallback that runs from the runbook.
+
+Timezone: FMP /stable/economic-calendar returns timestamps in UTC despite
+historically being labeled "ET". We convert to America/New_York so the
+pre-open's macro kill-switch can correctly compare against the 09:30 ET
+open.
 """
 from __future__ import annotations
 
@@ -18,8 +23,11 @@ import os
 import sys
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 import requests
+
+ET = ZoneInfo("America/New_York")
 
 PROJECT = Path(__file__).resolve().parents[1]
 OUT_PATH = PROJECT / "state" / "economic_calendar.json"
@@ -87,10 +95,21 @@ def main() -> int:
         kind, impact = normalize(ev_name)
         if kind is None:
             continue
-        # FMP returns date strings like "2026-04-29 12:30:00" — split into date + time_et
-        # Their timezone is reportedly ET; we surface as ET in our schema.
+        # FMP returns date strings like "2026-04-29 12:30:00" in **UTC**, despite
+        # the field name. Convert to ET (America/New_York, DST-aware) so the
+        # pre-open kill-switch can compare against the 09:30 ET open.
         d_str = row.get("date") or ""
-        date_part, _, time_part = d_str.partition(" ")
+        date_part = ""
+        time_part = ""
+        if d_str:
+            try:
+                dt_utc = datetime.strptime(d_str, "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc)
+                dt_et = dt_utc.astimezone(ET)
+                date_part = dt_et.date().isoformat()
+                time_part = dt_et.strftime("%H:%M:%S")
+            except ValueError:
+                # Fallback: treat as date-only or pre-formatted; surface raw string
+                date_part, _, time_part = d_str.partition(" ")
         actual = row.get("actual")
         consensus = row.get("estimate") or row.get("consensus")
         previous = row.get("previous")

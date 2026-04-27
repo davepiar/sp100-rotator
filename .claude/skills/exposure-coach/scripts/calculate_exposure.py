@@ -59,6 +59,9 @@ def extract_breadth_score(data: Optional[dict]) -> Optional[int]:
         return int(data["breadth_score"])
     if "composite_score" in data:
         return int(data["composite_score"])
+    # market-breadth-analyzer SKILL nests the score under composite.composite_score
+    if isinstance(data.get("composite"), dict) and "composite_score" in data["composite"]:
+        return int(data["composite"]["composite_score"])
     if "ad_ratio" in data and "nh_nl_ratio" in data:
         ad = data["ad_ratio"]
         nh_nl = data["nh_nl_ratio"]
@@ -79,6 +82,9 @@ def extract_uptrend_score(data: Optional[dict]) -> Optional[int]:
         return None
     if "uptrend_score" in data:
         return int(data["uptrend_score"])
+    # uptrend-analyzer SKILL nests the score under composite.composite_score
+    if isinstance(data.get("composite"), dict) and "composite_score" in data["composite"]:
+        return int(data["composite"]["composite_score"])
     if "uptrend_pct" in data:
         pct = data["uptrend_pct"]
         if pct > 50:
@@ -124,6 +130,10 @@ def extract_top_risk_score(data: Optional[dict]) -> Optional[int]:
         return None
     if "top_risk_score" in data:
         return int(data["top_risk_score"])
+    # market-top-detector SKILL: composite.composite_score is the raw top-risk
+    # probability (higher = more risk). Invert so high composite -> low exposure.
+    if isinstance(data.get("composite"), dict) and "composite_score" in data["composite"]:
+        return max(0, min(100, int(100 - data["composite"]["composite_score"])))
     if "top_probability" in data:
         prob = data["top_probability"]
         # Invert: high probability = low score
@@ -142,11 +152,15 @@ def extract_top_risk_score(data: Optional[dict]) -> Optional[int]:
 
 
 def extract_ftd_score(data: Optional[dict]) -> Optional[int]:
-    """Extract FTD score (inverted - high FTD = low score)."""
+    """Extract FTD score. High score = strong bottom confirmation = bullish."""
     if data is None:
         return None
     if "ftd_score" in data:
         return int(data["ftd_score"])
+    # ftd-detector SKILL: quality_score.total_score 0-100 (higher = stronger FTD).
+    # Use directly — strong FTD raises composite (bottom confirmed → more exposure).
+    if isinstance(data.get("quality_score"), dict) and "total_score" in data["quality_score"]:
+        return int(data["quality_score"]["total_score"])
     if "anomaly_level" in data:
         level = data["anomaly_level"].lower()
         mapping = {"none": 90, "low": 80, "moderate": 55, "elevated": 35, "critical": 15}

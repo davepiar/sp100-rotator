@@ -26,23 +26,28 @@ except ImportError:
     sys.exit(1)
 
 
-# --- FMP endpoint fallback: stable (new users) -> v3 (legacy users) ---
+# --- FMP endpoint fallback: stable (current) -> v3 (legacy, deprecated 2025-08-31) ---
+#
+# As of 2025-08-31, FMP retired /api/v3/* for non-legacy keys. The /stable/*
+# replacements moved historical bars to /historical-price-eod/full and changed
+# the response shape from {symbol, historical: [...]} (v3) to a flat list of
+# bars [{symbol, date, ...}] (stable). We still try v3 last for legacy keys.
 
 
 def _stable_hist_url(base, symbols_str, params):
-    """stable/historical-price-full?symbol=SPY&timeseries=90"""
+    """stable/historical-price-eod/full?symbol=SPY&timeseries=90 (flat-list response)"""
     params["symbol"] = symbols_str
     return base, params
 
 
 def _v3_hist_url(base, symbols_str, params):
-    """api/v3/historical-price-full/SPY?timeseries=90"""
+    """api/v3/historical-price-full/SPY?timeseries=90 (legacy users only)"""
     return f"{base}/{symbols_str}", params
 
 
 _FMP_ENDPOINTS = {
     "historical": [
-        ("https://financialmodelingprep.com/stable/historical-price-full", _stable_hist_url),
+        ("https://financialmodelingprep.com/stable/historical-price-eod/full", _stable_hist_url),
         ("https://financialmodelingprep.com/api/v3/historical-price-full", _v3_hist_url),
     ],
 }
@@ -159,10 +164,25 @@ class FMPClient:
             # Shape validation: reject truthy-but-wrong-shape responses
             valid = True
             if endpoint_key == "historical":
-                if not isinstance(data, dict):
+                # /stable/historical-price-eod/full returns a flat list:
+                #   [{symbol, date, open, high, low, close, volume, change, ...}, ...]
+                # /api/v3/historical-price-full returns a dict:
+                #   {symbol, historical: [{date, open, ...}, ...]}
+                # Adapt both to v3-shape `{symbol, historical: [...]}` for callers.
+                if isinstance(data, list):
+                    norm = symbols_str.replace("-", ".")
+                    if is_single and data and data[0].get("symbol"):
+                        if data[0]["symbol"].replace("-", ".") != norm:
+                            valid = False
+                    if valid:
+                        self._endpoint_failures[base_url] = 0
+                        # Strip per-row symbol to match v3 historical row shape
+                        rows = [{k: v for k, v in row.items() if k != "symbol"} for row in data]
+                        return {"symbol": symbols_str, "historical": rows}
+                elif not isinstance(data, dict):
                     valid = False
                 elif "historicalStockList" in data:
-                    # stable batch format -> v3 single format (exact match only)
+                    # legacy stable batch format -> v3 single format (exact match only)
                     norm = symbols_str.replace("-", ".")
                     found = None
                     for entry in data["historicalStockList"]:
@@ -203,49 +223,73 @@ class FMPClient:
             to_date: End date (YYYY-MM-DD)
 
         Returns:
-            List of earnings announcements or None on failure.
+            List of earnings announcements with v3-compatible field names
+            (eps, epsEstimated, revenue, revenueEstimated, time, symbol, date).
+            The /stable/* endpoint dropped the bmo/amc `time` field; we leave
+            it absent so callers' normalize_timing() returns "unknown".
         """
         cache_key = f"earnings_{from_date}_{to_date}"
         if cache_key in self.cache:
             return self.cache[cache_key]
 
-        url = f"{self.BASE_URL}/earning_calendar"
+        url = "https://financialmodelingprep.com/stable/earnings-calendar"
         params = {"from": from_date, "to": to_date}
         data = self._rate_limited_get(url, params)
-        if data:
-            self.cache[cache_key] = data
-        return data
+        if not isinstance(data, list):
+            return None
+
+        # Field rename: stable's epsActual/revenueActual -> v3's eps/revenue.
+        adapted = []
+        for row in data:
+            adapted.append({
+                "symbol": row.get("symbol"),
+                "date": row.get("date"),
+                "eps": row.get("epsActual"),
+                "epsEstimated": row.get("epsEstimated"),
+                "revenue": row.get("revenueActual"),
+                "revenueEstimated": row.get("revenueEstimated"),
+                # `time` (bmo/amc) absent in /stable/earnings-calendar; passes
+                # through to normalize_timing() as "unknown".
+            })
+        self.cache[cache_key] = adapted
+        return adapted
 
     def get_company_profiles(self, symbols: list[str]) -> dict[str, dict]:
-        """Fetch company profiles for multiple symbols in batches of 100.
+        """Fetch company profiles, one /stable/profile call per symbol.
 
         Args:
             symbols: List of ticker symbols
 
         Returns:
-            Dictionary mapping symbol to profile data.
+            Dict mapping symbol to profile data with v3-compatible aliases:
+            mktCap (= stable.marketCap) and exchangeShortName (= stable.exchange).
+
+        Note: /stable/profile accepts only one symbol per call on the free tier.
+        Budget impact: O(N) calls vs the v3 batch endpoint's O(1).
         """
-        profiles = {}
-        batch_size = 100
+        profiles: dict[str, dict] = {}
 
-        for i in range(0, len(symbols), batch_size):
-            batch = symbols[i : i + batch_size]
-            symbols_str = ",".join(batch)
-
-            cache_key = f"profiles_{symbols_str}"
+        for symbol in symbols:
+            cache_key = f"profile_{symbol}"
             if cache_key in self.cache:
-                for profile in self.cache[cache_key]:
-                    if isinstance(profile, dict):
-                        profiles[profile.get("symbol")] = profile
+                cached = self.cache[cache_key]
+                if cached:
+                    profiles[symbol] = cached
                 continue
 
-            url = f"{self.BASE_URL}/profile/{symbols_str}"
-            data = self._rate_limited_get(url)
-            if data:
-                self.cache[cache_key] = data
-                for profile in data:
-                    if isinstance(profile, dict):
-                        profiles[profile.get("symbol")] = profile
+            url = "https://financialmodelingprep.com/stable/profile"
+            data = self._rate_limited_get(url, {"symbol": symbol}, quiet=True)
+            if isinstance(data, list) and data:
+                profile = dict(data[0])
+                # Alias stable -> v3 field names so call sites don't change
+                if "marketCap" in profile and "mktCap" not in profile:
+                    profile["mktCap"] = profile["marketCap"]
+                if "exchange" in profile and "exchangeShortName" not in profile:
+                    profile["exchangeShortName"] = profile["exchange"]
+                profiles[profile.get("symbol", symbol)] = profile
+                self.cache[cache_key] = profile
+            else:
+                self.cache[cache_key] = None
 
         return profiles
 
