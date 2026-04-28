@@ -29,6 +29,11 @@ data/monthly/
 *.log
 .cache/
 
+# Scratch dir for one-shot scripts generated during /post-close and other
+# sessions (e.g. .tmp/build_research_report.py). The pattern is documented
+# in those scripts' own docstrings: "Not committed; lives in .tmp/."
+.tmp/
+
 # Python
 __pycache__/
 *.pyc
