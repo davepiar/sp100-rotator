@@ -22,6 +22,8 @@ artifact).
 | `state/strategy_params.json` | `monthly-recalibration` | yes (defaults if missing) |
 | `state/upcoming_earnings.json` | `post-close` | yes — read by the screen's earnings gate |
 | `state/economic_calendar.json` | `post-close` | yes — read for the macro kill-switch in Phase 2 |
+| `state/druckenmiller_view.json` | `post-close` Phase 4b | optional — surfaced in the pre-open report context band |
+| `state/scenario_analyses_index.json` | `post-close` Phase 3 (when triggered) | optional — surfaced in the report appendix |
 | Alpaca + FMP credentials | `~/.alpaca/credentials` | yes |
 
 If `research_bundle.json` is missing or stale, **abort** with
@@ -141,6 +143,50 @@ Verdict + overlay are persisted to:
 
 **On error or timeout:** warn-and-continue, no posture mutation. Pre-open never hard-fails.
 
+### 2.8. Global market-environment overlay (~2-3 min, soft-budgeted)
+
+Purpose: capture overnight Asia close, Europe pre-market, FX/commodities
+moves, and VIX level so the final screen acts on truly fresh global context
+— not just yesterday's US-close synthesis.
+
+**Step A — Invoke the skill.** Call **`market-environment-analysis`** with
+WebSearch budget capped at ~3 minutes. Write the human-readable Markdown to
+`data/snapshots/<DATE>/market-environment-analysis/` AND a structured
+summary to `state/market_environment.json` matching this schema:
+```jsonc
+{
+  "schema_version": "1.0",
+  "generated_at": "...Z",
+  "valid_until": "...Z (+8h)",
+  "session_date": "YYYY-MM-DD",
+  "regime": "risk-on" | "risk-off" | "neutral",
+  "vix": {"level": 16.2, "class": "calm|normal|elevated|stressed"},
+  "indices_overnight": {"nikkei":{...}, "hsi":{...}, "stoxx":{...},
+                         "sp500_futures":{...}, "ndx_futures":{...}},
+  "fx": {"dxy":..., "eurusd":..., "usdjpy":...},
+  "commodities": {"wti":..., "gold":...},
+  "yields": {"us2y":..., "us10y":..., "curve_2s10s":...},
+  "narrative": "≤300 chars",
+  "degraded": false,
+  "source": "market-environment-analysis (WebSearch)"
+}
+```
+If WebSearch errors out, hits the soft 3-min budget, or returns partial data:
+write the file with `degraded:true` and best-effort fields. Do NOT block.
+
+**Step B — Apply the posture overlay.**
+```bash
+python scripts/run_market_environment.py
+```
+Reads `state/market_environment.json`. If `regime == "risk-off"` AND
+`vix.class in ("elevated", "stressed")`, bumps
+`state/research_bundle.json.posture.conviction_floor` by +0.05 (capped 0.80)
+and appends a record to `posture.overlays[]`. Otherwise informational only.
+
+If the JSON is missing, stale (past `valid_until`), or `degraded:true`, the
+wrapper warns and exits 0 with no overlay. Pre-open never hard-fails on this
+phase. Same advisory-degrade pattern as `breadth_chart_veto.py`.
+
 ### 3. Final candidate screen (~1-2 min)
 
 ```bash
@@ -196,6 +242,17 @@ Print a Markdown table:
 | Action | Ticker | Sector | Qty | Limit $ | Notional | Weight | Conviction | Thesis |
 
 Plus: post-trade cash %, sector breakdown, total notional, sector caps headroom.
+
+Append a **Context band** above the trade table summarising what the operator
+is acting against:
+- `state/market_environment.json` → regime + VIX level (note staleness if any).
+- `state/druckenmiller_view.json` → conviction zone, pattern, target equity %,
+  divergence delta vs exposure-coach (from the `divergence_vs_exposure_coach`
+  field). One short line — full report is in `data/snapshots/<DATE>/druckenmiller/`.
+- `state/scenario_analyses_index.json` → list of scenarios from the last 30
+  days (topic_slug + report path). Read-only context; surfaces the
+  long-horizon framing the operator may want to skim before approving.
+
 Write `data/reports/<YYYY-MM-DD>.md` so the operator sees it both in chat and
 on disk.
 
