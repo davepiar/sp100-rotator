@@ -213,7 +213,11 @@ The free tier is **250 calls/day**. Today's daily-cadence skills consume:
 - `economic-calendar-fetcher`: 1 call
 - `earnings-trade-analyzer`: ~140 calls (default 2-day, top-20)
 - `pead-screener`: 50-200 calls (depends on universe)
-- `vcp-screener`: ~300 calls at default 100-candidate run — **risk of exceeding budget**
+- `vcp-screener`: ~120 calls when pinned to SP100 (1 quote + 1 historical per
+  symbol via `/stable/*`, plus an Alpaca-bars fallback for the ~10 FMP-gated
+  mega-caps like AVGO, LLY, BRK.B). Defaults to full SP500 (~520 calls) if
+  invoked without `--universe`, which exceeds budget — the pre-open runbook
+  pins to SP100 explicitly.
 - `canslim-screener`: ~283 calls — **always exceeds budget** without `--max-candidates 35`
 
 **Mitigation strategy:**
@@ -264,7 +268,7 @@ git add . && git commit -m "Import P0/P1 skills from tradermonty/claude-trading-
 
 After import, review each `SKILL.md` for hard-coded data sources and swap to the stack we standardize on (Alpaca data API for prices, FMP free tier for fundamentals, Yahoo as fallback).
 
-**FMP free tier caveats (as of Apr 2026):** The `/api/v3/*` endpoints were deprecated Aug 31, 2025 — use `/stable/*` instead. Most price/quote/historical/fundamentals endpoints still work on the free 250/day tier, but `institutional-ownership/*`, some screeners, and certain analyst-data endpoints now return HTTP 402 (paid-tier only). If a skill throws 402, either migrate to a free alternative (Yahoo, Alpaca bars, SEC EDGAR) or scope it out. Cache aggressively — 250 req/day is tight for a 100-ticker universe.
+**FMP free tier caveats (as of Apr 2026):** The `/api/v3/*` endpoints were deprecated Aug 31, 2025 — use `/stable/*` instead. Most price/quote/historical/fundamentals endpoints still work on the free 250/day tier, but `institutional-ownership/*`, some screeners, and certain analyst-data endpoints now return HTTP 402 (paid-tier only). On `/stable/quote` and `/stable/historical-price-eod/full` specifically, FMP also gates ~10–20 percent of mega-cap tickers (AVGO, LLY, BRK.B, GOOG, …) at 402 — the canonical workaround is to fall through to Alpaca's `/v2/stocks/{symbol}/bars` (paper-account credentials, full SP100 coverage) and reshape into the v3 historical envelope. The vcp-screener client (`fmp_client.py`) does this automatically. If a skill throws 402, either migrate to a free alternative (Alpaca bars, Yahoo, SEC EDGAR) or scope it out. Cache aggressively — 250 req/day is tight for a 100-ticker universe.
 
 ## Logging & audit
 

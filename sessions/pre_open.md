@@ -109,14 +109,21 @@ without news flags. Same advisory-degrade pattern as the missing economic_calend
 ```bash
 python .claude/skills/vcp-screener/scripts/screen_vcp.py \
   --output-dir data/snapshots/$(date +%F)/vcp \
-  --max-candidates 60 --top 15
+  --max-candidates 60 --top 15 \
+  --universe $(tail -n +2 data/universe/sp100.csv | cut -d, -f1 | tr '\n' ' ')
 ```
 
-Pulls FMP price history for the SP100 universe and applies Mark Minervini's
-Volatility Contraction Pattern (VCP) detection. Output is consumed by Phase 3.5
-(breakout-trade-planner). FMP free-tier budget: ~80 calls per run on SP100 with
-the cap above; combined with `fetch_news_delta` (~15 calls) this still leaves
+Pulls historical bars + quotes for the SP100 universe and applies Mark
+Minervini's Volatility Contraction Pattern (VCP) detection. Output is
+consumed by Phase 3.5 (breakout-trade-planner). FMP free-tier budget on SP100:
+~120 calls per run (1 quote + 1 historical per symbol after the migration to
+`/stable/*` endpoints, plus an Alpaca-bars fallback for the ~10 FMP-gated
+mega-caps). Combined with `fetch_news_delta` (~15 calls) this still leaves
 margin for `screen_candidates` (~50) and `premarket_check` (~30).
+
+**Universe pin:** the `--universe ...` flag is required to keep the run
+under the FMP free-tier 250/day budget. Without it the script would default
+to all 503 SP500 constituents (~520 calls).
 
 If FMP is rate-limited or VCP fails: warn-and-continue. Phase 3.5 will see no
 input and skip.

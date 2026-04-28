@@ -11,11 +11,21 @@ Features:
 - Session caching for duplicate requests
 - Batch quote support
 - S&P 500 constituents fetching
+
+Data source fallback chain (Apr 2026):
+- /api/v3/* deprecated Aug 31 2025 — kept as last resort for grandfathered users.
+- /stable/* is the post-deprecation home, but FMP gates ~10–20 percent of mega-caps
+  (e.g. AVGO, LLY, BRK.B) behind 402 even on the free tier. For those, fall through
+  to Alpaca's /v2/stocks/{symbol}/bars (paper account credentials), which is
+  unrestricted across SP100. The screener consumes a v3-shaped dict, so we wrap
+  every response back into {symbol, historical: [{date, open, high, low, close,
+  volume, ...}, ...]} regardless of source.
 """
 
 import os
 import sys
 import time
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 try:
@@ -29,24 +39,29 @@ except ImportError:
 
 
 def _stable_quote_url(base, symbols_str, params):
-    """stable/quote?symbol=^GSPC"""
+    """stable/quote?symbol=^GSPC (single symbol only on free tier)"""
     params["symbol"] = symbols_str
     return base, params
 
 
 def _v3_quote_url(base, symbols_str, params):
-    """api/v3/quote/^GSPC"""
+    """api/v3/quote/^GSPC (legacy users only post-Aug-2025)"""
     return f"{base}/{symbols_str}", params
 
 
 def _stable_hist_url(base, symbols_str, params):
-    """stable/historical-price-full?symbol=^GSPC&timeseries=80"""
+    """stable/historical-price-eod/full?symbol=^GSPC (single symbol only on free tier)
+
+    Note: this endpoint replaces the deprecated /api/v3/historical-price-full
+    after Aug 31 2025. Returns a FLAT array of bars; the caller wraps it
+    back into the v3 {symbol, historical: [...]} shape for backwards compat.
+    """
     params["symbol"] = symbols_str
     return base, params
 
 
 def _v3_hist_url(base, symbols_str, params):
-    """api/v3/historical-price-full/^GSPC?timeseries=80"""
+    """api/v3/historical-price-full/^GSPC (legacy users only post-Aug-2025)"""
     return f"{base}/{symbols_str}", params
 
 
@@ -56,7 +71,7 @@ _FMP_ENDPOINTS = {
         ("https://financialmodelingprep.com/api/v3/quote", _v3_quote_url),
     ],
     "historical": [
-        ("https://financialmodelingprep.com/stable/historical-price-full", _stable_hist_url),
+        ("https://financialmodelingprep.com/stable/historical-price-eod/full", _stable_hist_url),
         ("https://financialmodelingprep.com/api/v3/historical-price-full", _v3_hist_url),
     ],
 }
@@ -165,10 +180,30 @@ class FMPClient:
                     valid = False
 
             if endpoint_key == "historical":
-                if not isinstance(data, dict):
+                # /stable/historical-price-eod/full returns a flat list of bars:
+                #   [{symbol, date, open, high, low, close, volume, ...}, ...]
+                # /api/v3/historical-price-full (legacy) returns a dict:
+                #   {symbol, historical: [{date, open, ...}, ...]}
+                # Callers expect the v3 dict shape, so wrap stable's flat list.
+                if isinstance(data, list):
+                    if not data:
+                        valid = False
+                    else:
+                        norm_request = symbols_str.replace("-", ".")
+                        first_sym = data[0].get("symbol", "")
+                        if first_sym and first_sym.replace("-", ".") != norm_request:
+                            valid = False
+                        else:
+                            wrapped = {
+                                "symbol": first_sym or symbols_str,
+                                "historical": data,
+                            }
+                            self._endpoint_failures[base_url] = 0
+                            return wrapped
+                elif not isinstance(data, dict):
                     valid = False
                 elif "historicalStockList" in data:
-                    # stable batch format -> v3 single format (exact match only)
+                    # legacy batch format -> v3 single format (exact match only)
                     norm = symbols_str.replace("-", ".")
                     found = None
                     for entry in data["historicalStockList"]:
@@ -204,6 +239,9 @@ class FMPClient:
     def get_sp500_constituents(self) -> Optional[list[dict]]:
         """Fetch S&P 500 constituent list.
 
+        Tries the post-Aug-2025 stable endpoint first, then the legacy v3
+        endpoint for users with a grandfathered subscription.
+
         Returns:
             List of dicts with keys: symbol, name, sector, subSector
             or None on failure.
@@ -212,11 +250,16 @@ class FMPClient:
         if cache_key in self.cache:
             return self.cache[cache_key]
 
-        url = f"{self.BASE_URL}/sp500_constituent"
-        data = self._rate_limited_get(url)
-        if data:
-            self.cache[cache_key] = data
-        return data
+        endpoints = (
+            ("https://financialmodelingprep.com/stable/sp500-constituent", False),
+            (f"{self.BASE_URL}/sp500_constituent", True),  # last → loud on error
+        )
+        for url, is_last in endpoints:
+            data = self._rate_limited_get(url, quiet=not is_last)
+            if isinstance(data, list) and data:
+                self.cache[cache_key] = data
+                return data
+        return None
 
     def get_quote(self, symbols: str) -> Optional[list[dict]]:
         """Fetch real-time quote data for one or more symbols (comma-separated)"""
@@ -230,28 +273,146 @@ class FMPClient:
         return data
 
     def get_historical_prices(self, symbol: str, days: int = 365) -> Optional[dict]:
-        """Fetch historical daily OHLCV data"""
+        """Fetch historical daily OHLCV data.
+
+        Source order:
+          1. FMP /stable/historical-price-eod/full
+          2. FMP /api/v3/historical-price-full (legacy users)
+          3. Alpaca /v2/stocks/{symbol}/bars (covers FMP-gated mega-caps).
+
+        Always returns the v3-shaped {symbol, historical: [bars...]} dict
+        with bars sorted most-recent-first. None if all sources fail.
+        """
         cache_key = f"prices_{symbol}_{days}"
         if cache_key in self.cache:
             return self.cache[cache_key]
 
         data = self._request_with_fallback("historical", symbol, {"timeseries": days})
+        if not data:
+            data = self._alpaca_historical_bars(symbol, days)
         if data:
             self.cache[cache_key] = data
         return data
 
+    def _alpaca_historical_bars(self, symbol: str, days: int) -> Optional[dict]:
+        """Pull daily bars from Alpaca and reshape into the v3 historical envelope.
+
+        Used as a fall-through when FMP gates a symbol (BRK.B, AVGO, LLY, ...).
+        Requires ALPACA_API_KEY / ALPACA_SECRET_KEY env vars; if missing or the
+        request fails, returns None so the caller treats the symbol as missing.
+        """
+        key = os.getenv("ALPACA_API_KEY")
+        secret = os.getenv("ALPACA_SECRET_KEY")
+        data_url = os.getenv("ALPACA_DATA_URL", "https://data.alpaca.markets")
+        if not key or not secret:
+            return None
+        # ~1.5x calendar buffer to cover weekends + holidays in `days` trading bars.
+        end_dt = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+        start_dt = end_dt - timedelta(days=int(days * 1.5) + 7)
+        url = f"{data_url}/v2/stocks/{symbol}/bars"
+        params = {
+            "timeframe": "1Day",
+            "start": start_dt.isoformat().replace("+00:00", "Z"),
+            "end": end_dt.isoformat().replace("+00:00", "Z"),
+            "limit": min(int(days * 1.5) + 10, 10000),
+            "adjustment": "raw",
+        }
+        headers = {"APCA-API-KEY-ID": key, "APCA-API-SECRET-KEY": secret}
+        try:
+            r = requests.get(url, params=params, headers=headers, timeout=30)
+            self.api_calls_made += 1
+            if r.status_code != 200:
+                return None
+            payload = r.json()
+        except (requests.exceptions.RequestException, ValueError):
+            return None
+
+        bars = payload.get("bars") or []
+        if not bars:
+            return None
+        # Alpaca returns oldest-first; FMP/v3 callers expect most-recent-first.
+        bars_sorted = sorted(bars, key=lambda b: b.get("t", ""), reverse=True)
+        historical = [
+            {
+                "date": (b.get("t") or "")[:10],
+                "open": b.get("o", 0),
+                "high": b.get("h", 0),
+                "low": b.get("l", 0),
+                "close": b.get("c", 0),
+                "adjClose": b.get("c", 0),
+                "volume": b.get("v", 0),
+                "vwap": b.get("vw", 0),
+                "_source": "alpaca",
+            }
+            for b in bars_sorted
+        ]
+        return {"symbol": symbol, "historical": historical}
+
     def get_batch_quotes(self, symbols: list[str]) -> dict[str, dict]:
-        """Fetch quotes for a list of symbols, batching up to 5 per request"""
+        """Fetch quotes for a list of symbols.
+
+        FMP free-tier `/stable/quote` only accepts one symbol per call
+        (comma-separated lists return 402 Premium) and gates ~10-20 percent
+        of mega-cap symbols (e.g. AVGO, LLY, BRK.B) behind a 402 paywall.
+        For symbols that fail there, fall back to deriving the quote-shaped
+        record from `/stable/historical-price-eod/full`, which is open on
+        the free tier for the entire SP100 universe.
+
+        Legacy `/api/v3/quote/A,B,C` (grandfathered subscriptions) does
+        support batching but is unreachable from this account.
+        """
         results = {}
-        batch_size = 5
-        for i in range(0, len(symbols), batch_size):
-            batch = symbols[i : i + batch_size]
-            batch_str = ",".join(batch)
-            quotes = self.get_quote(batch_str)
+        for symbol in symbols:
+            quotes = self.get_quote(symbol)
             if quotes:
                 for q in quotes:
                     results[q["symbol"]] = q
+                continue
+            synth = self._synthesize_quote_from_history(symbol)
+            if synth:
+                results[synth["symbol"]] = synth
         return results
+
+    def _synthesize_quote_from_history(self, symbol: str) -> Optional[dict]:
+        """Derive a quote-shaped dict from historical bars for symbols
+        that the /stable/quote endpoint gates behind a paywall.
+
+        Returns a dict with the fields pre_filter_stock and analyze_stock
+        consume: symbol, price, yearHigh, yearLow, avgVolume, volume,
+        previousClose. marketCap is left at 0 since historical bars don't
+        carry it; downstream consumers that use marketCap should treat 0
+        as "unknown" (none of them currently use it as a hard gate).
+        """
+        hist_resp = self.get_historical_prices(symbol, days=260)
+        if not hist_resp:
+            return None
+        bars = hist_resp.get("historical") or []
+        if not bars:
+            return None
+        latest = bars[0]
+        # Most-recent-first ordering, take last 252 trading days for 52w window
+        window = bars[:252]
+        closes = [b.get("close", 0) for b in window if b.get("close")]
+        volumes = [b.get("volume", 0) for b in window if b.get("volume")]
+        if not closes:
+            return None
+        return {
+            "symbol": symbol,
+            "name": symbol,
+            "price": latest.get("close", 0),
+            "open": latest.get("open", 0),
+            "dayHigh": latest.get("high", 0),
+            "dayLow": latest.get("low", 0),
+            "yearHigh": max(closes),
+            "yearLow": min(closes),
+            "volume": latest.get("volume", 0),
+            "avgVolume": sum(volumes) / len(volumes) if volumes else 0,
+            "previousClose": bars[1].get("close", latest.get("close", 0)) if len(bars) > 1 else latest.get("close", 0),
+            "marketCap": 0,
+            "exchange": "",
+            "timestamp": 0,
+            "_synthesized": True,
+        }
 
     def get_batch_historical(self, symbols: list[str], days: int = 260) -> dict[str, list[dict]]:
         """Fetch historical prices for multiple symbols"""
