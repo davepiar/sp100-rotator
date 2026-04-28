@@ -182,25 +182,28 @@ Tier 1 — pipeline core (already wired into post-close / pre-open):
 | `earnings-calendar` | Upcoming-earnings dates | daily (`post-close`, via `fetch_earnings_window.py`) |
 | `market-news-analyst` | Full 10-day news synthesis (`post-close`) and per-ticker delta (`pre-open` Phase 2.5 via `scripts/fetch_news_delta.py`) | daily (both sessions) |
 | `breadth-chart-analyst` | Pre-market regime veto on S&P 500 200DMA breadth + Uptrend Ratio. Adjusts `posture.conviction_floor` on YELLOW/RED. | daily (`pre-open` Phase 2.7 via `scripts/breadth_chart_veto.py`) |
+| `market-environment-analysis` | Pre-open WebSearch overlay: global indices / FX / commodities / yields / VIX. Bumps `posture.conviction_floor` on risk-off + elevated VIX. WebSearch only, no FMP. | daily (`pre-open` Phase 2.8 via `scripts/run_market_environment.py`) |
 | `vcp-screener` | Volatility-contraction-pattern detection over SP100 | daily (`pre-open` Phase 2.6) |
 | `breakout-trade-planner` | Minervini worst-case-risk entries for VCP candidates. Dry-run by default; gated by `strategy_params.tunable.execute_plan.breakout_planner_active`. | daily (`pre-open` Phase 3.5 via `scripts/run_breakout_planner.py`) |
+| `stanley-druckenmiller-investment` | Post-close meta-skill: synthesises 4 daily signals + weekly macro into conviction (0-100), pattern, target allocation. Second opinion to `exposure-coach`; bumps `posture.conviction_floor` on ≥20pp divergence. No external API. | daily (`post-close` Phase 4b via `scripts/run_druckenmiller.py`) |
+| `scenario-analyzer` | Dual-agent 18-month scenario analysis triggered automatically when `news_summary.top_events` has a high-impact + risk-off-margin/binary event not analysed in last 7 days. Writes `reports/scenario_analysis_<topic>_YYYYMMDD.md`. WebSearch only. | event-triggered (`post-close` Phase 3) |
 | `macro-regime-detector` | Cross-asset regime | weekly (`weekly-context`) |
 | `sector-analyst` | Sector rotation | weekly (`weekly-context`) |
 | `theme-detector` | Narrative themes | weekly (`weekly-context`) |
 | `us-market-bubble-detector` | Structural risk | weekly (`weekly-context`) |
 | `backtest-expert` | Robustness methodology | monthly (`monthly-recalibration`) |
 
-Tier A — additional name-quality + measurement layer (ported but not yet
-wired into the runbooks; invoke ad-hoc until integrated):
+Tier A — additional name-quality + measurement layer (mostly wired now; the
+remainder is invoked ad-hoc until promoted to a runbook phase):
 
 | Skill | Role | Notes |
 |---|---|---|
-| `signal-postmortem` | Track FP/FN per signal, feed `monthly-recalibration` | No external API. Closes the measurement loop. |
-| `data-quality-checker` | Validate daily report before publication | Advisory only, no API. Run end of every session. |
-| `economic-calendar-fetcher` | FOMC/CPI/NFP releases | FMP free tier (1 call/day). |
-| `pead-screener` | Post-earnings-drift candidates | FMP free tier OK with default lookback. |
-| `canslim-screener` | O'Neil growth screen | **EXCEEDS 250-call free tier** at default settings (~283 calls/run). Cap with `--max-candidates 35` to stay under, or upgrade FMP. |
-| `earnings-trade-analyzer` | Post-earnings 5-factor scoring | FMP free tier OK at default 2-day lookback. |
+| `signal-postmortem` | Track FP/FN per signal, feed `monthly-recalibration` | No external API. Closes the measurement loop. Ad-hoc. |
+| `data-quality-checker` | Validate daily report before publication | Advisory only, no API. Wired in `post-close` Phase 7 and `pre-open` Phase 7. |
+| `economic-calendar-fetcher` | FOMC/CPI/NFP releases | FMP free tier (1 call/day). Wired in `post-close` Phase 2; consumed by `pre-open` Phase 2 macro kill-switch. |
+| `pead-screener` | Post-earnings-drift candidates | FMP free tier OK with default lookback. Wired in `post-close` Phase 5b. |
+| `canslim-screener` | O'Neil growth screen | **EXCEEDS 250-call free tier** at default settings (~283 calls/run). Cap with `--max-candidates 35` to stay under, or upgrade FMP. Currently weekly only. |
+| `earnings-trade-analyzer` | Post-earnings 5-factor scoring | FMP free tier OK at default 2-day lookback. Wired in `post-close` Phase 3. |
 
 ### FMP free-tier budget
 
@@ -221,6 +224,13 @@ The free tier is **250 calls/day**. Today's daily-cadence skills consume:
   observed performance.
 - If we observe FMP rate-limit errors more than once a week, upgrade to
   FMP Starter ($30/mo, 750 calls/day).
+
+**WebSearch budget note:** `market-environment-analysis` (pre-open),
+`market-news-analyst` (post-close), and `scenario-analyzer` (event-triggered)
+all use WebSearch and add to the per-session token/$ budget. Soft caps:
+post-close ≤ $1.50; pre-open ≤ $1.00 (`market-environment-analysis` should
+respect a 3-min wall-clock budget). If a session exceeds this, fall back to
+manual scenario invocation and tighten the market-env web-fetch count.
 
 ### Skip list (paid endpoints or out of scope)
 
