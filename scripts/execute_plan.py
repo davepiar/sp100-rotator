@@ -15,6 +15,13 @@ This guarantees every long position has a stop attached, addressing the DE-style
 No-chase guard (added 2026-04-26): refuse to place a new BUY for any symbol that
 already has an open order (any side) at Alpaca. Forces operator to cancel/replace
 rather than silently pile on at a worse price (DOW +4%, AVGO +4.6% chases last week).
+
+Target-weights filter (added 2026-04-30): BUY orders are cross-referenced against
+state/target_weights.json.positions. Any BUY ticker NOT present there is treated as
+"dropped by operator/kill-switch" and skipped. Closes the 2026-04-29 gap where the
+macro `defer_marginal_buys` kill-switch edited target_weights but the executor still
+placed the dropped BUYs from trade_plan.json. SELLs are NOT filtered — kill-switch
+runbook is explicit that only marginal BUYs are deferred, never SELLs.
 """
 from __future__ import annotations
 
@@ -92,6 +99,32 @@ def main() -> int:
     plan = json.loads((SNAP / "trade_plan.json").read_text())
     buy_orders = [o for o in plan["orders"] if o["action"].startswith("BUY")]
     sell_orders = [o for o in plan["orders"] if o["action"].startswith("SELL")]
+
+    # Target-weights filter: BUYs not present in target_weights.positions were dropped
+    # by operator edit or macro kill-switch. SELLs are NOT filtered.
+    target_positions = {t.upper() for t in tw.get("positions", {})}
+    tw_filtered: list[dict] = []
+    safe_after_tw: list[dict] = []
+    for o in buy_orders:
+        sym = o["ticker"].upper()
+        if sym not in target_positions:
+            tw_filtered.append({
+                "ticker": sym,
+                "reason": "absent from target_weights.positions (kill-switch or operator drop)",
+                "proposed_limit": o["limit_price"],
+                "qty": o["qty"],
+            })
+            log({"action": "target_weights_filter_drop", "ticker": sym,
+                 "proposed_limit": o["limit_price"], "qty": o["qty"]})
+            continue
+        safe_after_tw.append(o)
+    if tw_filtered:
+        print(f"  target-weights filter dropped {len(tw_filtered)} BUY(s):")
+        for d in tw_filtered:
+            print(f"    {d['ticker']:5s} qty={d['qty']:>3d} limit={d['proposed_limit']:.2f}  "
+                  f"({d['reason']})")
+    buy_orders = safe_after_tw
+
     print(f"Placing {len(buy_orders)} BUY + {len(sell_orders)} SELL orders")
 
     base = os.environ["ALPACA_BASE_URL"]
@@ -169,6 +202,7 @@ def main() -> int:
         "accepted": sum(1 for r in results if r.get("ok")),
         "failed": sum(1 for r in results if not r.get("ok")),
         "no_chase_blocked": chase_blocked,
+        "target_weights_filtered": tw_filtered,
         "stop_loss_pct": STOP_LOSS_PCT,
         "take_profit_pct": TAKE_PROFIT_PCT,
         "orders": results,
