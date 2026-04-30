@@ -22,6 +22,12 @@ data/reports/
 data/weekly/
 data/monthly/
 
+# Top-level reports/ is where scenario-analyzer and data-quality-checker write
+# their per-run outputs. Same status as data/reports/ — paths are recorded in
+# JSON state (e.g. research_bundle.json.scenarios_active[].report_path) but
+# the artifacts themselves are ephemeral.
+reports/
+
 # Claude memory files (personal notes on user/project)
 .claude/memory/
 
